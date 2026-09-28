@@ -123,7 +123,12 @@ inferlint report -o run.html --boot-log boot.log --before before.json --after af
     --series run.series.jsonl --requested 32
 ```
 
-![The report for the live run: what happened, the headline numbers, and 2 failures and 2 warnings](docs/report.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/report-dark.png">
+  <img alt="The report for the live run: what happened, the headline numbers, and 2 failures and 2 warnings" src="docs/report.png">
+</picture>
+
+The screenshot follows your GitHub theme, as the report follows your system's.
 
 **See a full example.** [`docs/example-report.html`](docs/example-report.html) is the complete
 report for the run above: the charts, the findings and both glossaries. GitHub shows HTML files
