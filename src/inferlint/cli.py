@@ -41,6 +41,13 @@ def _emit(results: Sequence[CheckResult], as_json: bool, strict: bool) -> int:
     return 0
 
 
+def _out(path: str) -> Path:
+    """An output path with its folder created, so ``-o runs/today/report.html`` works."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def _cmd_boot_facts(a: argparse.Namespace) -> int:
     facts = bootlog.parse_file(a.log)
     doc = asdict(facts)
@@ -97,7 +104,7 @@ def _cmd_check_log(a: argparse.Namespace) -> int:
 
 def _cmd_snapshot(a: argparse.Namespace) -> int:
     snap = telemetry.scrape(a.url)
-    snap.save(a.out)
+    snap.save(_out(a.out))
     print(f"{len(snap.metrics)} samples, scrape {snap.latency_s or 0:.3f}s -> {a.out}")
     return 0
 
@@ -110,7 +117,7 @@ def _cmd_watch(a: argparse.Namespace) -> int:
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, on_signal)
-    with Path(a.out).open("w", encoding="utf-8") as fh:
+    with _out(a.out).open("w", encoding="utf-8") as fh:
         n = series.watch(
             a.url,
             fh,
@@ -165,6 +172,8 @@ def _cmd_teardown(a: argparse.Namespace) -> int:
     naive = teardown.naive_pkill_matches(procs)
     for p in targets:
         print(f"target  pid={p.pid:<8} {p.cmdline[:100]}")
+    if not targets and not a.json:
+        print("no vLLM server processes found")
     missed = [p for p in targets if p not in naive]
     wrong = [p for p in naive if p not in targets]
     if missed or wrong:
@@ -213,7 +222,7 @@ def _cmd_report(a: argparse.Namespace) -> int:
         title=a.title,
         sources=[Path(p).name for p in inputs if p],
     )
-    Path(a.out).write_text(report.render(rep), encoding="utf-8")
+    _out(a.out).write_text(report.render(rep), encoding="utf-8")
     counts = {s: sum(1 for r in rep.results if r.status is s) for s in Status}
     summary = ", ".join(f"{n} {s.value}" for s, n in counts.items() if n)
     print(f"{len(rep.results)} checks ({summary}) -> {a.out}")

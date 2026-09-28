@@ -269,3 +269,9 @@ def test_cli_report_and_explain(tmp_path: Path, capsys: pytest.CaptureFixture[st
     assert main(["explain", "t1"]) == 0
     assert "Silent preemption" in capsys.readouterr().out
     assert main(["explain", "T99"]) == 2
+
+
+def test_cli_report_creates_the_output_folder(tmp_path: Path) -> None:
+    out = tmp_path / "runs" / "today" / "r.html"
+    assert main(["report", "-o", str(out), "--boot-log", str(LIVE / "boot.log")]) == 0
+    assert out.stat().st_size > 10_000
