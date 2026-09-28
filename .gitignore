@@ -1,0 +1,13 @@
+# internal planning and tooling never ships
+*.internal.md
+_internal/
+
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+results/scratch/
