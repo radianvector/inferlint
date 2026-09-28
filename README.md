@@ -76,12 +76,22 @@ changes results, and a command that reproduces it from files in this repository.
 
 ## Install
 
+`inferlint` is not on PyPI yet, so install it from GitHub. [pipx](https://pipx.pypa.io)
+gives it an environment of its own and puts the `inferlint` command on your PATH, so it
+works in any terminal and from any folder, with nothing to activate:
+
 ```console
-pip install inferlint   # not yet published; for now: pip install -e .
+pipx install git+https://github.com/radianvector/inferlint
+inferlint --help
 ```
 
-Python 3.10+, no dependencies. Teardown reads `/proc` and `nvidia-smi`, so it is
-Linux-only, like vLLM. Everything else runs anywhere.
+`uv tool install git+https://github.com/radianvector/inferlint` does the same, and plain
+`pip install git+https://github.com/radianvector/inferlint` installs it into whichever
+Python environment you are using. Once it is on PyPI, `pipx install inferlint`.
+
+Python 3.10+, no dependencies. `teardown` and `gpu-clear` find the server's processes
+through `/proc`, so they run on Linux (or WSL), where vLLM runs. Everything else runs
+anywhere.
 
 ## Use
 
@@ -135,10 +145,12 @@ report for the run above: the charts, the findings and both glossaries. GitHub s
 as source code, so open the file, choose **Download raw file**, and open it in any browser. It
 works offline.
 
-**Try it without a GPU.** The example is built from the recorded run in this repository, so you
-can make it yourself right after installing:
+**Try it without a GPU.** The example is built from the recorded run in this repository.
+Download the repository for its files, and make the report yourself:
 
 ```bash
+git clone https://github.com/radianvector/inferlint
+cd inferlint
 inferlint report -o example-report.html --title "vLLM 0.28 on an RTX 4090" --requested 32 \
     --boot-log tests/fixtures/vllm-0.28/live/boot.log \
     --before tests/fixtures/vllm-0.28/live/before.snapshot.json \
@@ -180,6 +192,24 @@ result["boot"] = facts.result_block()   # pool, block size, backend: stamp every
   shell one-liner and a bystander.
 - **Unknown formats are reported, not defaulted.** When a known log line changes format
   in a new vLLM release, `boot-facts` lists it as unparsed instead of returning a value.
+
+## Develop
+
+To change the code, work from a clone in a virtual environment of its own, with the
+package installed in editable mode (edits take effect without reinstalling) and the test
+tools added:
+
+```bash
+git clone https://github.com/radianvector/inferlint
+cd inferlint
+python -m venv .venv
+source .venv/bin/activate          # Windows PowerShell: .venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+pytest -q                          # no GPU needed
+ruff check src tests && ruff format --check src tests && pyright
+```
+
+The last two lines are what CI runs on Python 3.10, 3.11 and 3.12.
 
 ## Status
 
