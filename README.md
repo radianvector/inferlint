@@ -125,6 +125,22 @@ inferlint report -o run.html --boot-log boot.log --before before.json --after af
 
 ![The report for the live run: what happened, the headline numbers, and 2 failures and 2 warnings](docs/report.png)
 
+**See a full example.** [`docs/example-report.html`](docs/example-report.html) is the complete
+report for the run above: the charts, the findings and both glossaries. GitHub shows HTML files
+as source code, so open the file, choose **Download raw file**, and open it in any browser. It
+works offline.
+
+**Try it without a GPU.** The example is built from the recorded run in this repository, so you
+can make it yourself right after installing:
+
+```bash
+inferlint report -o example-report.html --title "vLLM 0.28 on an RTX 4090" --requested 32 \
+    --boot-log tests/fixtures/vllm-0.28/live/boot.log \
+    --before tests/fixtures/vllm-0.28/live/before.snapshot.json \
+    --after tests/fixtures/vllm-0.28/live/after.snapshot.json \
+    --series tests/fixtures/vllm-0.28/live/run.series.jsonl
+```
+
 `inferlint explain T9` prints the same plain-English explanation in the terminal.
 
 Exit status is 0 when every check passes (warnings allowed), 1 when one fails, and 2
