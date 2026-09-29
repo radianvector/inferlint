@@ -1,4 +1,4 @@
-"""Things your inference server doesn't tell you, turned into checks."""
+"""Measures what your inference server actually did, and flags what it didn't tell you."""
 
 from .result import CheckResult, Status, TripwireFailed
 

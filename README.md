@@ -1,16 +1,19 @@
 # inferlint
 
-**Things your inference server doesn't tell you, turned into checks.**
+**inferlint measures what your inference server actually did—and flags what it didn't
+tell you.**
+
+Measure achieved concurrency, preemptions, KV-cache behavior, GPU state, timing quality,
+and other signals that can silently invalidate inference results.
 
 Serving benchmarks fail quietly. vLLM preempts requests and logs nothing. A config boots
 cleanly and dies on its first request. The KV pool you measured yesterday is not the one
 you got today. A cleanup script stops the API server and leaves the engine holding the
 GPU. None of these raise an error, and all of them change the numbers.
 
-`inferlint` turns each one into a check. You run it around a benchmark test: it reads
-the server's start-up log and counters, and tells you which of the test's numbers can be
-trusted. It does not start the server or send the load, so it works with the tools you
-already use.
+You run `inferlint` around a benchmark test. It reads the server's start-up log and
+counters, measures what happened, and flags each of these problems when it occurs. It
+does not start the server or send the load, so it works with the tools you already use.
 
 ## One run, measured
 

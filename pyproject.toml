@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "inferlint"
 version = "0.1.0"
-description = "Things your inference server doesn't tell you, turned into checks."
+description = "Measures what your inference server actually did—and flags what it didn't tell you."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
