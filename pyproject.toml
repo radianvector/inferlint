@@ -25,7 +25,8 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/radianvector/inferlint"
+Homepage = "https://radianvector.com/open-source/"
+Company = "https://radianvector.com/"
 Source = "https://github.com/radianvector/inferlint"
 Issues = "https://github.com/radianvector/inferlint/issues"
 Documentation = "https://github.com/radianvector/inferlint/blob/main/docs/tripwires.md"
