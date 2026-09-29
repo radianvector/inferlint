@@ -22,13 +22,14 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import signal
 import subprocess
 import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from .gpu import nvidia_smi_path
 
 __all__ = [
     "ClearResult",
@@ -134,7 +135,7 @@ def naive_pkill_matches(procs: Iterable[Proc], pattern: str = "vllm serve") -> l
 
 
 def read_gpu_used_mib(nvidia_smi: str | None = None) -> list[int]:
-    exe = nvidia_smi or shutil.which("nvidia-smi") or "/usr/lib/wsl/lib/nvidia-smi"
+    exe = nvidia_smi or nvidia_smi_path()
     out = subprocess.run(
         [exe, "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
         check=True,

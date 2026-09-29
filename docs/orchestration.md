@@ -48,11 +48,11 @@ Rules that prevent it:
 ## A boot sequence that respects T2, T4, T7 and T11
 
 ```bash
-inferlint gpu-clear || exit 1                      # refuse to boot on a dirty card (T2)
+inferlint gpu-inspect || exit 1                    # refuse to boot on a dirty card (T2)
 vllm serve "$MODEL" "${ARGS[@]}" > boot.log 2>&1 &
 until grep -q "Application startup complete" boot.log; do sleep 5; done
 inferlint check-log boot.log || exit 1              # backend, failure reason, block size
-inferlint probe http://127.0.0.1:8000 || exit 1     # boot is not a gate (T7)
+inferlint probe http://127.0.0.1:8000 || exit 1     # some servers fail their first request (T7)
 inferlint boot-facts --json boot.log > boot.json    # pool, block size, backend: stamp every result (T4, T11)
 # ... run the benchmark with `inferlint watch` sampling alongside ...
 inferlint teardown                                  # SIGTERM, SIGKILL survivors, consecutive clear readings (T2)

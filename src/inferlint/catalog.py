@@ -43,7 +43,7 @@ TRIPWIRES: dict[str, Tripwire] = {
             "itself VLLM::EngineCore and can keep running after the front end is gone.",
             "The next test starts on a GPU that is already mostly full and produces wrong "
             "numbers with no error. One low memory reading is not proof the GPU is free.",
-            "inferlint teardown  |  inferlint gpu-clear",
+            "inferlint teardown  |  inferlint gpu-inspect",
         ),
         Tripwire(
             "T3",

@@ -11,6 +11,7 @@ import argparse
 import json
 import shutil
 import signal
+import subprocess
 import sys
 import textwrap
 import threading
@@ -19,7 +20,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from . import __version__, bootlog, checks, report, series, teardown, telemetry
+from . import __version__, bootlog, checks, gpu, report, series, teardown, telemetry
 from .catalog import TRIPWIRES
 from .probe import probe
 from .result import CheckResult, Status
@@ -166,7 +167,23 @@ def _cmd_series(a: argparse.Namespace) -> int:
     return _emit(results, a.json, a.strict)
 
 
+def _procs_readable() -> bool:
+    """Finding server processes reads /proc, so it needs Linux (or WSL)."""
+    return Path("/proc").is_dir()
+
+
+def _needs_linux(what: str, evidence: dict[str, Any] | None = None) -> CheckResult:
+    return CheckResult(
+        "T2",
+        Status.UNKNOWN,
+        f"{what} needs Linux: it finds vLLM's processes in /proc. Run it where vLLM runs.",
+        evidence or {},
+    )
+
+
 def _cmd_teardown(a: argparse.Namespace) -> int:
+    if not _procs_readable():
+        return _emit([_needs_linux("teardown")], a.json, a.strict)
     procs = teardown.list_processes()
     targets = teardown.server_processes(procs)
     naive = teardown.naive_pkill_matches(procs)
@@ -192,11 +209,49 @@ def _cmd_teardown(a: argparse.Namespace) -> int:
     return _emit([r], a.json, a.strict)
 
 
-def _cmd_gpu_clear(a: argparse.Namespace) -> int:
+def _mib_text(v: int | None) -> str:
+    return "?" if v is None else f"{v:,} MiB"
+
+
+def _print_gpus(gpus: Sequence[gpu.GpuInfo]) -> None:
+    if not gpus:
+        print("no NVIDIA GPU found: nvidia-smi is missing or failed")
+    for g in gpus:
+        kind = ", ".join(
+            x
+            for x in (
+                g.family,
+                f"compute capability {g.compute_cap}" if g.compute_cap else None,
+                f"driver {g.driver}" if g.driver else None,
+            )
+            if x
+        )
+        print(f"GPU {g.index}   {g.name}")
+        if kind:
+            print(f"        {kind}")
+        print(
+            f"        memory: {_mib_text(g.memory_total_mib)} total, "
+            f"{_mib_text(g.memory_used_mib)} used, {_mib_text(g.memory_free_mib)} free"
+        )
+
+
+def _cmd_gpu_inspect(a: argparse.Namespace) -> int:
+    try:
+        gpus = gpu.read_gpus()
+    except (OSError, subprocess.SubprocessError):
+        gpus = []
+    facts = [g.to_json() for g in gpus]
+    if not a.json:
+        _print_gpus(gpus)
+    if not _procs_readable():
+        r = _needs_linux("Checking that the GPU is free", {"gpus": facts})
+        return _emit([r], a.json, a.strict)
+
     def live() -> int:
         return len(teardown.server_processes(teardown.list_processes()))
 
     res = teardown.wait_clear(
+        read_used=teardown.read_gpu_used_mib,
         live_servers=live,
         max_used_mib=a.max_used_mib,
         consecutive=a.consecutive,
@@ -206,7 +261,7 @@ def _cmd_gpu_clear(a: argparse.Namespace) -> int:
         "T2",
         Status.PASS if res.clear else Status.FAIL,
         res.reason if res.clear else f"card not clear; refusing to boot. {res.reason}",
-        {"readings": res.readings},
+        {"readings": res.readings, "gpus": facts},
     )
     return _emit([r], a.json, a.strict)
 
@@ -304,7 +359,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, fn, help_ in (
         ("teardown", _cmd_teardown, "T2: stop every vLLM process and wait for a clear card"),
-        ("gpu-clear", _cmd_gpu_clear, "T2: exit non-zero unless the card is clear (boot gate)"),
+        (
+            "gpu-inspect",
+            _cmd_gpu_inspect,
+            "T2: which GPU this is, its memory, and whether it is free (non-zero exit if not)",
+        ),
     ):
         p = add(name, help_)
         p.add_argument("--max-used-mib", type=int, default=teardown.DEFAULT_MAX_USED_MIB)

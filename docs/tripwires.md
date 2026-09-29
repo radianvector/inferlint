@@ -12,7 +12,7 @@ vLLM 0.28 boot logs and `/metrics` output from an RTX 4090, with paths removed.
 | id | trap | check | status |
 |---|---|---|---|
 | T1 | preemption is silent | `inferlint preemption` | fixture, live 0.28 |
-| T2 | `pkill -f "vllm serve"` misses the engine | `inferlint teardown`, `inferlint gpu-clear` | fixture, live 0.28 |
+| T2 | `pkill -f "vllm serve"` misses the engine | `inferlint teardown`, `inferlint gpu-inspect` | fixture, live 0.28 |
 | T3 | `pkill -f` in a shell one-liner kills the shell | structural matching in `teardown` | fixture, live |
 | T4 | the KV pool is drawn per boot, in levels | `inferlint check-log` over several boots | fixture |
 | T5 | hybrid models force a large attention block | `inferlint check-log` | fixture, live 0.28 |
@@ -64,14 +64,14 @@ low partway through its own teardown.
 
 **Measured.** In the live run the API server was killed with SIGKILL. Twenty seconds
 later `VLLM::EngineCore` was still alive, re-parented, and the card showed 21,768 MiB in
-use. `inferlint gpu-clear` refused to boot. `inferlint teardown` found the engine (which
+use. `inferlint gpu-inspect` refused to boot. `inferlint teardown` found the engine (which
 `pkill -f 'vllm serve'` would have missed) and the card read 0 MiB afterwards.
 
 **Check.** Processes are matched on their argv (`vllm serve`, `python -m
 vllm.entrypoints...`, any `VLLM::*`), never including the caller or its ancestors.
 SIGTERM, then SIGKILL survivors, then require *consecutive* readings with no server
-process and every GPU below a threshold. `inferlint gpu-clear` is the boot gate: it exits
-non-zero on a dirty card.
+process and every GPU below a threshold. `inferlint gpu-inspect` is the boot gate: it
+shows which GPU this is and its memory, and exits non-zero on a dirty card.
 
 ## T3: `pkill -f` in a shell one-liner kills the shell
 
