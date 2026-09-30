@@ -263,7 +263,9 @@ pytest -q                          # no GPU needed
 ruff check src tests && ruff format --check src tests && pyright
 ```
 
-The last two lines are what CI runs on Python 3.10, 3.11 and 3.12.
+GitHub Actions runs the last two lines on every push and pull request, on Python 3.10,
+3.11 and 3.12 (see `.github/workflows/ci.yml`). This tests inferlint's own code; it is
+not a GitHub Action for your benchmarks.
 
 ## Status
 

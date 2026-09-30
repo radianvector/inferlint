@@ -1,4 +1,4 @@
-"""T7: a boot is not a gate. Send real requests before trusting a server.
+"""T7: send real requests to a server before measuring it.
 
 Some configs start, announce they are ready, and die on the first request that reaches
 a code path the boot never exercised (a kernel JIT-compiled lazily, for instance). The

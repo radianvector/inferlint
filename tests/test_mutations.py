@@ -1,8 +1,8 @@
 """Every tripwire, watched failing.
 
 Each row runs a check on real evidence, then on the same evidence with one number or
-line changed, and requires the verdict to flip. A check that has never been seen to
-change its verdict is of unknown value, however many times it has passed.
+line changed, and requires the verdict to flip. This shows that each check can fail
+as well as pass.
 """
 
 from __future__ import annotations
