@@ -15,6 +15,11 @@ You run `inferlint` around a benchmark test. It reads the server's start-up log 
 counters, measures what happened, and flags each of these problems when it occurs. It
 does not start the server or send the load, so it works with the tools you already use.
 
+The [tutorial](https://radianvector.github.io/inferlint/tutorial.html) walks through a GPU
+run step by step and shows how to try inferlint without a GPU. The
+[example report](https://radianvector.github.io/inferlint/example-report.html) is the HTML
+page it made for the run below.
+
 ## One run, measured
 
 vLLM 0.28 on an RTX 4090, a 27B hybrid attention/Mamba model with 4-bit weights and
@@ -175,10 +180,9 @@ keys) reads values at any moment.
 </picture>
 
 **See a full example.**
-[`docs/example-report.html`](https://github.com/radianvector/inferlint/blob/main/docs/example-report.html)
-is the complete report for the run above: the charts, the findings and both glossaries.
-GitHub shows HTML files as source code, so open the file, choose **Download raw file**,
-and open it in any browser. It works offline.
+[The complete report for the run above](https://radianvector.github.io/inferlint/example-report.html)
+has the charts, the findings and both glossaries. The same file is in this repository as
+`docs/example-report.html`, and it works offline.
 
 **Try it without a GPU.** The example is built from the recorded run in this repository.
 Download the repository for its files, and make the report yourself:

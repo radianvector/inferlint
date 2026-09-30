@@ -1,0 +1,1113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>inferlint Tutorial</title>
+<meta name="description" content="How to use inferlint: a GPU run step by step, and how to try it without a GPU, using one recorded vLLM run.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Cdefs%3E%3ClinearGradient id=%22inferlint-g%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe14d%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ff5c1f%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22url%28%23inferlint-g%29%22/%3E%3Cpath d=%22M4 18h7l3-9 4 15 3-6h7%22 fill=%22none%22 stroke=%22%2314110f%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
+<style>
+:root{
+  --page:#fbfbfc;--surface:#ffffff;--ink:#0d0f12;--ink-2:#474d55;--muted:#616871;
+  --hair:rgba(13,15,18,.09);--grid:rgba(13,15,18,.07);--axis:rgba(13,15,18,.24);
+  --accent:#1b62d4;--accent-ink:#ffffff;--wash:rgba(27,98,212,.07);--hover:rgba(13,15,18,.04);
+  --run:#1b62d4;--wait:#eb6834;
+  --cube-top:#76a3f2;--cube-left:#1b62d4;--cube-right:#124a9e;--cube-edge:rgba(255,255,255,.55);
+  --tile-top:#f08a5d;--tile-side:#c4501f;--floor:rgba(27,98,212,.06);--floor-edge:rgba(27,98,212,.28);
+  --code-bg:#f3f4f7;--term-bg:#12151a;--term-ink:#e4e7eb;--term-dim:#8d939b;
+  --t-pass:#3fc43f;--t-warn:#fab219;--t-fail:#ff7a74;--t-unknown:#b2b7be;
+  --good-ink:#006300;--warning-ink:#8a5a00;--critical-ink:#b42323;--unknown-ink:#474d55;
+  --good-bg:rgba(12,163,12,.10);--warning-bg:rgba(250,178,25,.16);
+  --critical-bg:rgba(208,59,59,.10);--unknown-bg:rgba(13,15,18,.06);
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
+  --display:'Space Grotesk','Inter',-apple-system,'Segoe UI',system-ui,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
+  --page:#08090a;--surface:#0f1113;--ink:#f4f5f7;--ink-2:#b2b7be;--muted:#8d939b;
+  --hair:rgba(255,255,255,.09);--grid:rgba(255,255,255,.07);--axis:rgba(255,255,255,.24);
+  --accent:#5fa0ff;--accent-ink:#08090a;--wash:rgba(95,160,255,.09);--hover:rgba(255,255,255,.05);
+  --run:#2e7cf0;--wait:#d95926;
+  --cube-top:#7fb2ff;--cube-left:#2e7cf0;--cube-right:#1a4f9f;--cube-edge:rgba(8,9,10,.55);
+  --tile-top:#e0703f;--tile-side:#9c3c14;--floor:rgba(95,160,255,.07);--floor-edge:rgba(95,160,255,.30);
+  --code-bg:#15181c;
+  --good-ink:#3fc43f;--warning-ink:#fab219;--critical-ink:#ff7a74;--unknown-ink:#b2b7be;
+  --good-bg:rgba(12,163,12,.16);--warning-bg:rgba(250,178,25,.14);
+  --critical-bg:rgba(208,59,59,.20);--unknown-bg:rgba(255,255,255,.07);}}
+:root[data-theme="dark"]{color-scheme:dark;
+  --page:#08090a;--surface:#0f1113;--ink:#f4f5f7;--ink-2:#b2b7be;--muted:#8d939b;
+  --hair:rgba(255,255,255,.09);--grid:rgba(255,255,255,.07);--axis:rgba(255,255,255,.24);
+  --accent:#5fa0ff;--accent-ink:#08090a;--wash:rgba(95,160,255,.09);--hover:rgba(255,255,255,.05);
+  --run:#2e7cf0;--wait:#d95926;
+  --cube-top:#7fb2ff;--cube-left:#2e7cf0;--cube-right:#1a4f9f;--cube-edge:rgba(8,9,10,.55);
+  --tile-top:#e0703f;--tile-side:#9c3c14;--floor:rgba(95,160,255,.07);--floor-edge:rgba(95,160,255,.30);
+  --code-bg:#15181c;
+  --good-ink:#3fc43f;--warning-ink:#fab219;--critical-ink:#ff7a74;--unknown-ink:#b2b7be;
+  --good-bg:rgba(12,163,12,.16);--warning-bg:rgba(250,178,25,.14);
+  --critical-bg:rgba(208,59,59,.20);--unknown-bg:rgba(255,255,255,.07);}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:15px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-underline-offset:2px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+h1,h2,h3,h4{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:-.01em;line-height:1.2}
+h1{font-size:clamp(30px,4.6vw,44px);font-weight:600}
+h2{font-size:clamp(22px,2.6vw,28px);font-weight:600}
+h3{font-size:17px;font-weight:600}
+h4{font-size:15px;font-weight:600}
+p{margin:0}
+code{font-family:var(--mono);font-size:.88em}
+.prose{max-width:68ch;display:flex;flex-direction:column;gap:12px;color:var(--ink-2)}
+.prose strong{color:var(--ink)}
+.eyebrow{font:600 11.5px/1 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.num-tab{font-variant-numeric:tabular-nums}
+
+.wrap{max-width:1180px;margin:0 auto;padding-inline:clamp(16px,4vw,40px);padding-block:22px 72px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:22px;border-bottom:1px solid var(--hair);margin-bottom:34px}
+.brand{display:flex;align-items:center;gap:10px;font:700 13px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.brand svg{width:26px;height:26px;flex:none}
+.brand span{color:var(--muted);font-weight:500;letter-spacing:.08em}
+.iconbtn{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:10px;border:1px solid var(--hair);background:var(--surface);color:var(--ink-2);cursor:pointer}
+.iconbtn:hover{background:var(--hover)}
+.iconbtn svg{width:18px;height:18px}
+.ico-moon{display:none}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .ico-moon{display:block}:root:not([data-theme="light"]) .ico-sun{display:none}}
+:root[data-theme="dark"] .ico-moon{display:block}
+:root[data-theme="dark"] .ico-sun{display:none}
+
+.layout{display:grid;grid-template-columns:minmax(0,1fr);gap:28px}
+main{min-width:0;display:flex;flex-direction:column;gap:80px}
+section{display:flex;flex-direction:column;gap:20px;scroll-margin-top:20px}
+
+.toc{border:1px solid var(--hair);border-radius:12px;background:var(--surface)}
+.toc summary{list-style:none;cursor:pointer;padding:12px 14px;font:600 13px/1 var(--sans);display:flex;justify-content:space-between;align-items:center}
+.toc summary::-webkit-details-marker{display:none}
+.toc summary::after{content:"";width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .2s}
+.toc[open] summary::after{transform:rotate(-135deg)}
+.toc ol{list-style:none;margin:0;padding:0 8px 10px;display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:10px;align-items:baseline;padding:7px 8px;border-radius:8px;color:var(--ink-2);text-decoration:none;font-size:14px}
+.toc a:hover{background:var(--hover);color:var(--ink)}
+.toc a[aria-current="true"]{background:var(--wash);color:var(--accent);font-weight:600}
+.toc a b{font:600 11px/1 var(--mono);color:var(--muted);width:18px;flex:none}
+.toc a[aria-current="true"] b{color:var(--accent)}
+@media (min-width:980px){
+  .layout{grid-template-columns:210px minmax(0,1fr);gap:48px}
+  .toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 18px);align-self:start}
+}
+
+/* hero */
+.hero{gap:18px}
+.lede{font-size:17px;line-height:1.6;color:var(--ink-2);max-width:66ch}
+.findings{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.findings li{border-top:2px solid var(--ink);padding-top:10px;display:flex;flex-direction:column;gap:4px}
+.findings .big{font:600 30px/1.1 var(--display);font-variant-numeric:tabular-nums}
+.findings .what{color:var(--ink-2);font-size:14px}
+
+/* cards */
+.card{border:1px solid var(--hair);border-radius:14px;background:var(--surface);padding:clamp(14px,2.4vw,22px);display:flex;flex-direction:column;gap:14px}
+.card-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px 20px}
+.card-head h3{font-size:18px}
+.card-head p{color:var(--muted);font-size:13.5px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.run{background:var(--run)}.sw.wait{background:var(--wait)}
+.sw.pre{width:0;height:0;border-radius:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid var(--ink)}
+.plotwrap{position:relative;overflow-x:auto}
+.plotwrap svg{display:block;width:100%;min-width:560px;height:auto}
+.plot text{font-family:var(--sans);font-size:11px;fill:var(--muted)}
+.plot .grid{stroke:var(--grid);stroke-width:1}
+.plot .base{stroke:var(--axis);stroke-width:1}
+.plot .ref{stroke:var(--ink-2);stroke-width:1.2;stroke-dasharray:5 4}
+.plot .reflab{fill:var(--ink-2);font-weight:600}
+.plot .pilltxt{fill:var(--ink);font-weight:600;font-size:11.5px}
+.plot .pill{fill:var(--surface);stroke:var(--hair)}
+.plot .tri{fill:var(--ink)}
+.plot .trilab{fill:var(--ink);font-weight:600;font-size:10.5px}
+.plot .cross{stroke:var(--ink);stroke-width:1;opacity:.55}
+.plot .dot{stroke:var(--surface);stroke-width:2}
+.plotwrap:focus-visible{outline-offset:4px}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--page);font-size:12.5px;line-height:1.45;padding:8px 10px;border-radius:8px;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.18);font-variant-numeric:tabular-nums}
+.tip b{font-weight:600}
+.hint{font-size:12.5px;color:var(--muted)}
+details.numbers summary{cursor:pointer;font-size:13px;color:var(--ink-2)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:8px 12px 8px 0;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font:600 11.5px/1.3 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+details.numbers table{margin-top:10px;max-width:560px}
+
+/* pool */
+.pool-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px}
+.stat{border:1px solid var(--hair);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.stat .k{font-size:12px;color:var(--muted)}
+.stat .v{font:600 24px/1.15 var(--display);font-variant-numeric:tabular-nums}
+.stat.run .v{color:var(--run)}.stat.wait .v{color:var(--wait)}
+.stat.pre .v{color:var(--critical-ink)}
+.controls{display:flex;flex-direction:column;gap:6px}
+.controls-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
+.controls label{font-weight:600;font-size:14px}
+.slider{position:relative;flex:1 1 280px;min-width:0;padding-bottom:22px}
+.slider input{width:100%;accent-color:var(--accent);margin:0}
+.slider .mark{position:absolute;top:22px;transform:translateX(-50%);font-size:11.5px;color:var(--muted);white-space:nowrap}
+.slider .mark::before{content:"";position:absolute;left:50%;top:-8px;width:1px;height:7px;background:var(--axis)}
+.slider .mark.boundary{color:var(--ink);font-weight:600}
+.slider #mark-pre{transform:translateX(-10px)}
+.slider #mark-pre::before{left:10px}
+.btn{font:600 13.5px/1 var(--sans);padding:9px 14px;border-radius:9px;border:1px solid var(--hair);background:var(--surface);color:var(--ink);cursor:pointer}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.stage{overflow-x:auto}
+.stage svg{display:block;width:100%;min-width:520px;height:auto}
+.stage text{font-family:var(--sans);font-size:12px;fill:var(--muted)}
+.stage .lab{fill:var(--ink-2);font-weight:600}
+.cube .t{fill:var(--cube-top)}.cube .l{fill:var(--cube-left)}.cube .r{fill:var(--cube-right)}
+.cube polygon{stroke:var(--cube-edge);stroke-width:.7;stroke-linejoin:round}
+.cube,.tile,.ghost{transition:opacity .35s ease,transform .35s ease}
+.cube.off{opacity:0;transform:translateY(-16px)}
+.tile .t{fill:var(--tile-top)}.tile .s{fill:var(--tile-side)}
+.tile.off{opacity:0;transform:translateY(-10px)}
+.tile.new .t{stroke:var(--ink);stroke-width:1.4}
+.ghost{fill:none;stroke:var(--wait);stroke-width:1.6;stroke-dasharray:4 3}
+.ghost.off{opacity:0}
+.floor{fill:var(--floor);stroke:var(--floor-edge);stroke-width:1}
+.gauge{display:flex;flex-direction:column;gap:6px}
+.cells{display:grid;grid-template-columns:repeat(42,minmax(0,1fr));gap:2px}
+.cells i{height:16px;border-radius:2px;border:1px solid var(--axis);background:transparent;transition:background .3s,border-color .3s}
+.cells i.used{background:var(--run);border-color:var(--run)}
+.gauge .cap{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.readout{border-left:3px solid var(--accent);padding:4px 0 4px 14px;color:var(--ink-2);max-width:72ch}
+.readout.alarm{border-left-color:var(--critical-ink)}
+.readout strong{color:var(--ink)}
+@media (prefers-reduced-motion:reduce){.cube,.tile,.ghost,.cells i{transition:none}}
+.init *,.init i{transition:none!important}
+[hidden]{display:none!important}
+
+/* timeline */
+.timeline{overflow-x:auto}
+.timeline svg{display:block;width:100%;min-width:760px;height:auto}
+.timeline text{font-family:var(--sans);font-size:12px;fill:var(--muted)}
+.timeline .lane{fill:var(--ink-2);font-weight:600;font-size:12.5px}
+.timeline .rail{stroke:var(--hair);stroke-width:2}
+.timeline .bar-boot{fill:var(--wash);stroke:var(--accent);stroke-width:1;stroke-dasharray:3 3}
+.timeline .bar-serve{fill:var(--wash);stroke:var(--accent);stroke-width:1}
+.timeline .bar-load{fill:var(--hover);stroke:var(--ink-2);stroke-width:1}
+.timeline .bartxt{fill:var(--ink-2);font-size:11.5px}
+.timeline .tick{stroke:var(--accent);stroke-width:1;opacity:.55}
+.timeline .mk{cursor:pointer}
+.timeline .mk circle{fill:var(--surface);stroke:var(--accent);stroke-width:2}
+.timeline .mk text{fill:var(--accent);font:700 11.5px var(--display);text-anchor:middle}
+.timeline .mk .mlab{fill:var(--ink-2);font:500 11px var(--mono)}
+.timeline .mk:hover circle,.timeline .mk:focus-visible circle{fill:var(--accent)}
+.timeline .mk:hover text.n,.timeline .mk:focus-visible text.n{fill:var(--accent-ink)}
+.timeline .mk:focus{outline:none}
+
+/* steps */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.toolbar .hint{margin-left:auto}
+.zone{padding-left:52px;margin:14px 0 2px}
+.zone:first-child{margin-top:0}
+ol.steps{list-style:none;margin:0;padding:0;position:relative;display:flex;flex-direction:column}
+ol.steps::before{content:"";position:absolute;left:16px;top:18px;bottom:18px;width:2px;background:var(--hair)}
+.step{position:relative;padding-left:52px;scroll-margin-top:20px}
+.step .n{position:absolute;left:0;top:9px;width:34px;height:34px;border-radius:50%;background:var(--page);border:2px solid var(--accent);color:var(--accent);display:grid;place-items:center;font:700 14px/1 var(--display);z-index:1}
+.step details[open] .n{background:var(--accent);color:var(--accent-ink)}
+.step summary{list-style:none;cursor:pointer;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:14px 34px 14px 0;border-bottom:1px solid var(--hair)}
+.step summary::-webkit-details-marker{display:none}
+.step summary::after{content:"";position:absolute;right:8px;top:21px;width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .2s}
+.step details[open] summary::after{transform:rotate(-135deg)}
+.step summary:hover .st{color:var(--accent)}
+.step .st{font:600 16px/1.35 var(--display)}
+.step .peek{font:500 12.5px/1.4 var(--mono);color:var(--muted)}
+.step .body{padding:14px 0 22px;display:flex;flex-direction:column;gap:12px;max-width:760px}
+.step .body p{color:var(--ink-2)}
+.step .body p strong{color:var(--ink)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}
+.chip{font:600 11.5px/1 var(--mono);padding:5px 8px;border-radius:999px;background:var(--wash);color:var(--accent);text-decoration:none}
+.chip:hover{background:var(--accent);color:var(--accent-ink)}
+.code{position:relative;background:var(--code-bg);border:1px solid var(--hair);border-radius:9px}
+.code pre{margin:0;padding:12px 74px 12px 14px;overflow-x:auto;font:13px/1.6 var(--mono);color:var(--ink)}
+.code .c{color:var(--muted)}
+.copy{position:absolute;top:7px;right:7px;font:600 12px/1 var(--sans);padding:7px 10px;border-radius:7px;border:1px solid var(--hair);background:var(--surface);color:var(--ink-2);cursor:pointer}
+.copy:hover{color:var(--ink);background:var(--hover)}
+.see{font:600 11px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:-4px}
+pre.out{margin:0;background:var(--term-bg);color:var(--term-ink);border-radius:9px;padding:12px 14px;overflow-x:auto;font:12.5px/1.6 var(--mono)}
+pre.out .s-pass{color:var(--t-pass);font-weight:700}
+pre.out .s-warn{color:var(--t-warn);font-weight:700}
+pre.out .s-fail{color:var(--t-fail);font-weight:700}
+pre.out .dim{color:var(--term-dim)}
+.note{font-size:13.5px;color:var(--ink-2);background:var(--wash);border-radius:9px;padding:10px 12px}
+.note strong{color:var(--ink)}
+
+/* part B */
+.tabs{display:inline-flex;gap:4px;padding:4px;border:1px solid var(--hair);border-radius:11px;background:var(--surface);flex-wrap:wrap}
+.tabs button{font:600 13px/1 var(--sans);padding:8px 12px;border-radius:8px;border:0;background:transparent;color:var(--ink-2);cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+.bstep{display:flex;flex-direction:column;gap:10px}
+.bstep h3{display:flex;gap:10px;align-items:baseline}
+.bstep h3 b{font:700 12px/1 var(--mono);color:var(--accent)}
+.cmds{display:flex;flex-direction:column;gap:6px}
+.cmds details{border-bottom:1px solid var(--hair)}
+.cmds summary{list-style:none;cursor:pointer;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:12px 30px 12px 0;position:relative}
+.cmds summary::-webkit-details-marker{display:none}
+.cmds summary::after{content:"";position:absolute;right:8px;top:18px;width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .2s}
+.cmds details[open] summary::after{transform:rotate(-135deg)}
+.cmds summary .st{font-weight:600}
+.cmds .body{display:flex;flex-direction:column;gap:10px;padding:0 0 16px}
+
+/* results */
+.anatomy{display:flex;flex-direction:column;gap:8px}
+.anatomy .line{font:600 clamp(13px,2.2vw,16px)/1.3 var(--mono);display:flex;flex-wrap:wrap;gap:0 14px;background:var(--term-bg);color:var(--term-ink);padding:16px 18px;border-radius:10px}
+.anatomy .part{display:flex;flex-direction:column;gap:8px}
+.anatomy .part small{font:500 11.5px/1.3 var(--sans);color:var(--term-dim);border-top:1px solid rgba(255,255,255,.25);padding-top:6px}
+.anatomy .fail{color:var(--t-fail)}
+.pill{display:inline-flex;align-items:center;gap:5px;font:600 12px/1 var(--sans);padding:5px 9px 5px 7px;border-radius:999px;white-space:nowrap}
+.pill svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.pill.pass{background:var(--good-bg);color:var(--good-ink)}
+.pill.warn{background:var(--warning-bg);color:var(--warning-ink)}
+.pill.fail{background:var(--critical-bg);color:var(--critical-ink)}
+.pill.unknown{background:var(--unknown-bg);color:var(--unknown-ink)}
+.twocol{display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
+@media (min-width:880px){.twocol{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}}
+
+/* tripwires */
+.twgroups{display:flex;flex-direction:column;gap:22px}
+.twgroup{display:flex;flex-direction:column}
+.twgroup h3{margin-bottom:6px;display:flex;gap:10px;align-items:baseline}
+.twgroup h3 span{font:500 12.5px/1 var(--sans);color:var(--muted)}
+details.tw{border-bottom:1px solid var(--hair);scroll-margin-top:20px}
+details.tw summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:11px 28px 11px 0;position:relative}
+details.tw summary::-webkit-details-marker{display:none}
+details.tw summary::after{content:"";position:absolute;right:8px;top:17px;width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .2s}
+details.tw[open] summary::after{transform:rotate(-135deg)}
+details.tw .id{font:700 12px/1 var(--mono);color:var(--accent)}
+details.tw .nm{font-weight:600}
+details.tw .cmd{font:500 12px/1.3 var(--mono);color:var(--muted);text-align:right}
+details.tw .body{padding:0 0 16px 54px;display:flex;flex-direction:column;gap:10px;max-width:780px}
+details.tw .body p{color:var(--ink-2)}
+details.tw .body p strong{color:var(--ink)}
+@media (max-width:560px){details.tw summary{grid-template-columns:40px minmax(0,1fr)} details.tw .cmd{display:none} details.tw .body{padding-left:0}}
+.flash{animation:flash 1.4s ease}
+@keyframes flash{0%,40%{background:var(--wash)}100%{background:transparent}}
+@media (prefers-reduced-motion:reduce){.flash{animation:none}}
+
+footer{margin-top:72px;padding-top:18px;border-top:1px solid var(--hair);font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 18px}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe14d"/><stop offset="1" stop-color="#ff5c1f"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lg)"/><path d="M4 18h7l3-9 4 15 3-6h7" fill="none" stroke="#14110f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      inferlint <span>tutorial</span>
+    </div>
+    <button class="iconbtn" id="theme" type="button" aria-label="Switch between light and dark">
+      <svg class="ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg class="ico-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+    </button>
+  </header>
+
+  <div class="layout">
+    <details class="toc" id="toc">
+      <summary>On this page</summary>
+      <nav aria-label="On this page"><ol>
+        <li><a href="#start"><b>·</b>What it finds</a></li>
+        <li><a href="#pool"><b>·</b>Why only 10, in 3D</a></li>
+        <li><a href="#gpu-run"><b>A</b>A GPU run, step by step</a></li>
+        <li><a href="#no-gpu"><b>B</b>Try it without a GPU</a></li>
+        <li><a href="#results"><b>·</b>Reading a result</a></li>
+        <li><a href="#tripwires"><b>·</b>The 14 checks</a></li>
+        <li><a href="#cheatsheet"><b>·</b>Cheat sheet</a></li>
+      </ol></nav>
+    </details>
+
+    <main>
+      <!-- ============ HERO ============ -->
+      <section id="start" class="hero">
+        <p class="eyebrow">Tutorial</p>
+        <h1>inferlint, step by step</h1>
+        <p class="lede">inferlint measures what your inference server actually did—and flags what it didn't tell you. From a vLLM server's start-up log and counters it measures achieved concurrency, preemptions, KV-cache use, GPU state and timing, and checks the run for 14 known problems. Each check answers Pass, Warning, Fail or Can't tell. It works alongside whatever load tool you already use. The examples on this page all come from one recorded run: vLLM 0.28 on an RTX 4090, a 27B model, 32 requests at once, 1,000 output tokens each.</p>
+
+        <figure class="card" style="margin:0">
+          <div class="card-head">
+            <h3>Asked for 32 at once. The server ran 10.</h3>
+            <p>Requests in flight during the recorded run, read every 0.25 s</p>
+          </div>
+          <div class="legend" aria-hidden="true">
+            <span><i class="sw run"></i>Running on the GPU</span>
+            <span><i class="sw wait"></i>Waiting in the queue</span>
+            <span><i class="sw pre"></i>Preemption: a running request pushed back to the queue</span>
+          </div>
+          <div class="plotwrap" id="flow" tabindex="0" aria-label="Chart of running and waiting requests over 93 seconds. Use the arrow keys to read values.">
+            <svg id="flow-svg" class="plot" viewBox="0 0 720 330" role="img" aria-label="Running requests never exceed 10 while 22 to 26 wait; 22 preemptions happen between 16 and 72 seconds."></svg>
+            <div class="tip" id="flow-tip" hidden></div>
+          </div>
+          <p class="hint">Hover over the chart, or focus it and use the arrow keys, to read any moment.</p>
+          <details class="numbers"><summary>Show the numbers, every 5 seconds</summary><div class="tablewrap" id="flow-table"></div></details>
+        </figure>
+
+        <ul class="findings">
+          <li><span class="big num-tab">10 of 32</span><span class="what">requests ran at once. The benchmark said 32. <a class="chip" href="#tw-T8">T8</a></span></li>
+          <li><span class="big num-tab">22</span><span class="what">preemptions. The server log mentions none. <a class="chip" href="#tw-T1">T1</a></span></li>
+          <li><span class="big num-tab">10 → 7</span><span class="what">the most that fit, falling as answers grew. <a class="chip" href="#tw-T9">T9</a></span></li>
+        </ul>
+      </section>
+
+      <!-- ============ POOL 3D ============ -->
+      <section id="pool">
+        <p class="eyebrow">The idea behind most of the checks</p>
+        <h2>Why only 10? The GPU memory, in 3D</h2>
+        <div class="prose">
+          <p>While a request is being answered, the server keeps its working notes in GPU memory, called the <strong>KV cache</strong>. vLLM hands that memory out in <strong>blocks</strong>. In this run there were 43 blocks of 784 tokens each, and one is held back, so <strong>42</strong> were usable (<a href="#tw-T14">T14</a>).</p>
+          <p>Each request needed 4 blocks to start, so 10 fit and the other 22 waited. As answers grew past 784 tokens they needed more blocks, and fewer fit. Press Play to replay the recorded run, or drag the slider through it.</p>
+        </div>
+
+        <div class="card pool-grid">
+          <div class="stats">
+            <div class="stat"><span class="k">Seconds into the run</span><span class="v" id="p-t">0.0</span></div>
+            <div class="stat run"><span class="k">Running</span><span class="v" id="p-run">0</span></div>
+            <div class="stat wait"><span class="k">Waiting</span><span class="v" id="p-wait">0</span></div>
+            <div class="stat"><span class="k">Blocks each, average</span><span class="v" id="p-per">–</span></div>
+            <div class="stat"><span class="k">Finished</span><span class="v" id="p-done">0</span></div>
+            <div class="stat" id="p-pre-box"><span class="k">Preemptions so far</span><span class="v" id="p-pre">0</span></div>
+          </div>
+
+          <div class="controls">
+            <div class="controls-row">
+              <label for="pool-t">Time in the recorded run</label>
+            </div>
+            <div class="controls-row">
+              <div class="slider">
+                <input type="range" id="pool-t" min="0" max="364" step="1" value="0" aria-describedby="pool-readout">
+                <span class="mark" style="left:0%;transform:none">0 s</span>
+                <span class="mark boundary" id="mark-pre" style="left:17.3%">16 s: first preemption</span>
+                <span class="mark" style="left:100%;transform:translateX(-100%)">93 s</span>
+              </div>
+              <button class="btn primary" id="play" type="button">Play the run</button>
+            </div>
+          </div>
+
+          <div class="stage"><svg id="pool-svg" viewBox="0 0 600 330" role="img" aria-label="Isometric view of the recorded run: each running request is a tower of memory blocks; waiting requests are tiles in a queue."></svg></div>
+
+          <div class="gauge">
+            <div class="cells" id="cells" aria-hidden="true"></div>
+            <div class="cap"><span>The 42 usable blocks</span><span id="p-used">0 in use, 42 free</span></div>
+          </div>
+          <p class="readout" id="pool-readout" aria-live="polite"></p>
+          <p class="hint">Each tower is a running request and each tile a waiting one; a tile with an outline has just been pushed back. Outlined spots are places with no room while requests wait. The recording has the total number of blocks in use, not each request's count, so the towers share that total evenly.</p>
+        </div>
+      </section>
+
+      <!-- ============ PART A ============ -->
+      <section id="gpu-run">
+        <p class="eyebrow">Part A</p>
+        <h2>A GPU run, step by step</h2>
+        <div class="prose">
+          <p>This is the full routine around a benchmark. You need Linux or WSL, an NVIDIA GPU, vLLM, and inferlint installed on the same machine (<a href="#b1">B1</a>). Use two terminals in the same folder: <strong>A</strong> runs the server, <strong>B</strong> runs everything else. inferlint reads the server; your own load tool sends the benchmark's requests.</p>
+          <p>The picture shows what runs when. Click a number to open that step.</p>
+        </div>
+
+        <div class="card">
+          <div class="timeline"><svg id="tl-svg" viewBox="0 0 1010 200" role="img" aria-label="Timeline: the server starts, inferlint checks it, takes a reading before and after the load test, records during it, then stops the server."></svg></div>
+        </div>
+
+        <div class="toolbar">
+          <button class="btn" type="button" data-steps="open">Open all steps</button>
+          <button class="btn" type="button" data-steps="close">Close all</button>
+          <span class="hint">Commands are for Linux or WSL. Terminal A runs the server; B runs everything else.</span>
+        </div>
+
+        <ol class="steps" id="steps">
+          <li class="zone"><span class="eyebrow">Before you start</span></li>
+          <li class="step" id="s1"><details open>
+            <summary><span class="n">1</span><span class="st">Check that the GPU is free</span><span class="peek">inferlint gpu-inspect</span></summary>
+            <div class="body">
+              <p>A server from an earlier test can still be holding the card. In the recorded run, a killed server's engine kept <strong>21.3 GiB</strong> after its front end was gone. A new server started then would only get the memory that was left.</p>
+              <div class="code"><pre><code>inferlint gpu-inspect || exit 1</code></pre></div>
+              <p class="see">You'll see (the RTX 4090 used for this page)</p>
+              <pre class="out">GPU 0   NVIDIA GeForce RTX 4090
+        Ada Lovelace, compute capability 8.9, driver 616.56
+        memory: 24,564 MiB total, 0 MiB used, 24,138 MiB free
+[ T2] PASS  2 consecutive clear readings</pre>
+              <p>It shows which GPU this is and its memory, then checks that no server process is holding it. It only looks; it never stops anything. It exits with 1 if the card is not clear, so a script stops there.</p>
+              <div class="chips">Checks <a class="chip" href="#tw-T2">T2</a></div>
+            </div>
+          </details></li>
+
+          <li class="zone"><span class="eyebrow">Start the server</span></li>
+          <li class="step" id="s2"><details>
+            <summary><span class="n">2</span><span class="st">Start vLLM and keep its log</span><span class="peek">vllm serve … | tee boot.log</span></summary>
+            <div class="body">
+              <p>In terminal <strong>A</strong>, start the server with your usual command and save everything it prints at start-up to a file. The log records how much memory the server set aside and how it divided it; inferlint reads it in the next step. Use a new log file for each start.</p>
+              <div class="code"><pre><code>vllm serve "$MODEL" --max-model-len 16384 2&gt;&amp;1 | tee boot.log</code></pre></div>
+              <p>Wait for <code>Application startup complete</code>; it took 2 min 4 s in the recorded run. Run the remaining steps in terminal <strong>B</strong>.</p>
+            </div>
+          </details></li>
+
+          <li class="step" id="s3"><details>
+            <summary><span class="n">3</span><span class="st">Read the start-up log</span><span class="peek">inferlint check-log boot.log</span></summary>
+            <div class="body">
+              <p>This checks how the server set itself up: whether start-up failed and why, how large its memory blocks are, and whether it used the attention method you asked for.</p>
+              <div class="code"><pre><code>inferlint check-log boot.log</code></pre></div>
+              <p class="see">You'll see (recorded run)</p>
+              <pre class="out">[T12] PASS  no failure in log
+[ T5] WARN  attention block size forced to 784 tokens (requested 16); each request's KV is allocated in 784-token units
+[ T6] PASS  nothing to check: the server was started without --attention-backend, so vLLM chose its own (FLASH_ATTN) and nothing could be ignored; there was no draft model either</pre>
+              <p>With two or more logs from the same settings, <code>check-log</code> also compares them (<a href="#tw-T4">T4</a>, <a href="#tw-T11">T11</a>). <code>inferlint boot-facts boot.log</code> lists everything it read from the log.</p>
+              <div class="chips">Checks <a class="chip" href="#tw-T12">T12</a><a class="chip" href="#tw-T5">T5</a><a class="chip" href="#tw-T6">T6</a><a class="chip" href="#tw-T4">T4</a><a class="chip" href="#tw-T11">T11</a></div>
+            </div>
+          </details></li>
+
+          <li class="step" id="s4"><details>
+            <summary><span class="n">4</span><span class="st">Send it a few real requests</span><span class="peek">inferlint probe URL</span></summary>
+            <div class="body">
+              <p>Some settings start cleanly and then crash on the first request. The probe sends one request, then 8 at once, and checks that the server is still running afterwards.</p>
+              <div class="code"><pre><code>inferlint probe http://127.0.0.1:8000</code></pre></div>
+              <p class="see">You'll see</p>
+              <pre class="out">[ T7] PASS  1 + 8 concurrent requests served, server alive</pre>
+              <div class="chips">Checks <a class="chip" href="#tw-T7">T7</a></div>
+            </div>
+          </details></li>
+
+          <li class="zone"><span class="eyebrow">Measure</span></li>
+          <li class="step" id="s5"><details>
+            <summary><span class="n">5</span><span class="st">Take a reading before the test</span><span class="peek">inferlint snapshot URL -o before.json</span></summary>
+            <div class="body">
+              <p>This saves all of the server's counters, with the time, to a file: tokens generated so far, requests finished, preemptions and more. Step 8 takes a second reading, and the difference between the two is what happened during your test.</p>
+              <div class="code"><pre><code>inferlint snapshot http://127.0.0.1:8000 -o before.json</code></pre></div>
+            </div>
+          </details></li>
+
+          <li class="step" id="s6"><details>
+            <summary><span class="n">6</span><span class="st">Start recording</span><span class="peek">inferlint watch URL … &amp;</span></summary>
+            <div class="body">
+              <p>Two readings show totals. To see what happened in between (how many requests ran, how many waited, how full the memory was), record the server every quarter second while the test runs. The <code>&amp;</code> runs it in the background.</p>
+              <div class="code"><pre><code>inferlint watch http://127.0.0.1:8000 -o run.series.jsonl --interval 0.25 &amp;</code></pre></div>
+              <p>That recording is what the chart at the top of this page is drawn from.</p>
+            </div>
+          </details></li>
+
+          <li class="step" id="s7"><details>
+            <summary><span class="n">7</span><span class="st">Run your load test</span><span class="peek">your usual client</span></summary>
+            <div class="body">
+              <p>Use whatever benchmark you normally use. inferlint doesn't need to know which: its numbers come from the server's own counters. Note how many requests your tool keeps open at once; you'll pass that number as <code>--requested</code>. For example, with vLLM's own client:</p>
+              <div class="code"><pre><code>vllm bench serve --model "$MODEL" --dataset-name random \
+    --random-input-len 88 --random-output-len 1000 --ignore-eos \
+    --num-prompts 32 --max-concurrency 32</code></pre></div>
+              <p class="hint">Option names change between vLLM versions; <code>vllm bench serve --help</code> lists yours.</p>
+            </div>
+          </details></li>
+
+          <li class="step" id="s8"><details>
+            <summary><span class="n">8</span><span class="st">Take a reading after, and stop recording</span><span class="peek">inferlint snapshot … -o after.json</span></summary>
+            <div class="body">
+              <div class="code"><pre><code>inferlint snapshot http://127.0.0.1:8000 -o after.json
+kill %1        <span class="c"># stops the watch from step 6</span></code></pre></div>
+              <p>You now have four files: <code>boot.log</code>, <code>before.json</code>, <code>after.json</code> and <code>run.series.jsonl</code>. Everything from here on works from these files, on any computer, with no GPU.</p>
+            </div>
+          </details></li>
+
+          <li class="zone"><span class="eyebrow">Read the results</span></li>
+          <li class="step" id="s9"><details>
+            <summary><span class="n">9</span><span class="st">Check what happened during the run</span><span class="peek">preemption · rate · series</span></summary>
+            <div class="body">
+              <div class="code"><pre><code>inferlint preemption before.json after.json
+inferlint rate before.json after.json
+inferlint series run.series.jsonl --snapshot after.json --requested 32</code></pre></div>
+              <p class="see">You'll see (recorded run)</p>
+              <pre class="out">[ T1] FAIL  22 preemptions during the run
+[T10] PASS  341.44 tokens/s over 93.720s; an integer-second timer would say 344.09 (+0.77%)
+[T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block
+[ T9] WARN  ceiling moved between 7 and 10 as requests grew (one request held 9.5% to 14.3% of the cache); concurrency was not a constant of this run
+[ T8] FAIL  requested 32 concurrent, server never ran more than 10</pre>
+              <p>The server finished all 32 requests without errors. The two Fails are about the measurement: at most 10 requests ran at once, and 22 were paused and restarted along the way.</p>
+              <div class="chips">Checks <a class="chip" href="#tw-T1">T1</a><a class="chip" href="#tw-T10">T10</a><a class="chip" href="#tw-T14">T14</a><a class="chip" href="#tw-T9">T9</a><a class="chip" href="#tw-T8">T8</a></div>
+            </div>
+          </details></li>
+
+          <li class="step" id="s10"><details>
+            <summary><span class="n">10</span><span class="st">Make the report</span><span class="peek">inferlint report -o run.html …</span></summary>
+            <div class="body">
+              <p>One HTML page with everything: a plain-English account of the run, every verdict, charts of what the server did, and the start-up facts. It needs no internet connection, so you can attach it to a ticket as it is.</p>
+              <div class="code"><pre><code>inferlint report -o run.html --requested 32 --boot-log boot.log \
+    --before before.json --after after.json --series run.series.jsonl</code></pre></div>
+              <p class="see">You'll see</p>
+              <pre class="out">8 checks (4 pass, 2 warn, 2 fail) -&gt; run.html</pre>
+              <p>Open <code>run.html</code> in any browser. <a href="example-report.html">The report for the recorded run</a> shows what you get.</p>
+            </div>
+          </details></li>
+
+          <li class="zone"><span class="eyebrow">Clean up</span></li>
+          <li class="step" id="s11"><details>
+            <summary><span class="n">11</span><span class="st">Stop the server properly</span><span class="peek">inferlint teardown</span></summary>
+            <div class="body">
+              <p>The usual <code>pkill -f "vllm serve"</code> misses vLLM's engine process, which renames itself <code>VLLM::EngineCore</code> and keeps the GPU memory. <code>teardown</code> finds every server process, stops them, and waits until two readings in a row show the card is free.</p>
+              <div class="code"><pre><code>inferlint teardown --dry-run   <span class="c"># only lists what it would stop</span>
+inferlint teardown</code></pre></div>
+              <p class="see">You'll see (after the server was killed with <code>pkill -9</code>)</p>
+              <pre class="out">target  pid=1030     VLLM::EngineCore
+(pkill -f 'vllm serve' would miss 1 and wrongly hit 0)
+[ T2] PASS  2 consecutive clear readings</pre>
+              <div class="chips">Checks <a class="chip" href="#tw-T2">T2</a><a class="chip" href="#tw-T3">T3</a></div>
+            </div>
+          </details></li>
+        </ol>
+      </section>
+
+      <!-- ============ PART B ============ -->
+      <section id="no-gpu">
+        <p class="eyebrow">Part B</p>
+        <h2>Try it without a GPU</h2>
+        <div class="prose">
+          <p>The repository includes the four files from the recorded run, so you can try every reading command on any computer in a few minutes.</p>
+        </div>
+
+        <div class="bstep" id="b1">
+          <h3><b>B1</b>Install</h3>
+          <div class="code"><pre><code>pipx install inferlint
+inferlint --help</code></pre></div>
+          <p class="note"><strong>pipx</strong> gives inferlint its own environment and puts the <code>inferlint</code> command on your PATH. There is nothing to activate, and it works from any folder. Plain <code>pip install inferlint</code> works too. Needs Python 3.10 or newer; inferlint has no other dependencies.</p>
+        </div>
+
+        <div class="bstep" id="b2">
+          <h3><b>B2</b>Get the recorded run</h3>
+          <div class="code"><pre><code>git clone https://github.com/radianvector/inferlint
+cd inferlint</code></pre></div>
+        </div>
+
+        <div class="bstep" id="b3">
+          <h3><b>B3</b>Run the checks on it</h3>
+          <div class="tabs" role="tablist" aria-label="Your terminal">
+            <button type="button" role="tab" id="tab-bash" aria-selected="true" data-os="bash">Linux, macOS, WSL</button>
+            <button type="button" role="tab" id="tab-ps" aria-selected="false" data-os="ps">Windows PowerShell</button>
+          </div>
+          <p class="hint">First, a short name for the folder with the recorded files:</p>
+          <div class="code" data-os="bash"><pre><code>L=tests/fixtures/vllm-0.28/live</code></pre></div>
+          <div class="code" data-os="ps" hidden><pre><code>$L = "tests\fixtures\vllm-0.28\live"</code></pre></div>
+          <div class="cmds" id="b-cmds"></div>
+          <p class="note"><strong>On Windows,</strong> everything here works in PowerShell. <code>teardown</code> needs Linux, because it finds the server's processes the way Linux lists them. <code>gpu-inspect</code> shows the GPU on Windows too, but its free-card check (T2) needs Linux, so there it answers Can't tell. Run those two in WSL, where vLLM runs anyway.</p>
+        </div>
+      </section>
+
+      <!-- ============ RESULTS ============ -->
+      <section id="results">
+        <h2>Reading a result</h2>
+        <div class="anatomy" aria-label="An example result line, labelled">
+          <div class="line">
+            <span class="part"><span>[ T1]</span><small>which check</small></span>
+            <span class="part"><span class="fail">FAIL</span><small>the verdict</small></span>
+            <span class="part"><span>22 preemptions during the run</span><small>what it found, in the run's own numbers</small></span>
+          </div>
+        </div>
+
+        <div class="twocol">
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th scope="col">Verdict</th><th scope="col">What it means</th><th scope="col">What to do</th></tr></thead>
+              <tbody>
+                <tr><td><span class="pill fail"><svg viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>Fail</span></td><td>The check found its problem in this run, so a number from the run (users served, speed or delay) needs that context. Only T7 and T12 mean the server itself failed.</td><td>Fix the setup and run again, or report the number together with the finding.</td></tr>
+                <tr><td><span class="pill warn"><svg viewBox="0 0 16 16"><path d="M8 3.5v6M8 12.2v.3"/></svg>Warning</span></td><td>Nothing is wrong on its own, but a setting or an effect changes how the numbers should be read.</td><td>Keep the warning with the results.</td></tr>
+                <tr><td><span class="pill unknown"><svg viewBox="0 0 16 16"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6 1v.6M8 12.2v.3"/></svg>Can't tell</span></td><td>A counter or log line the check needs was missing. It never counts as a pass. The terminal shows it as <code>????</code>.</td><td>Supply the missing file, or check the vLLM version.</td></tr>
+                <tr><td><span class="pill pass"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg>Pass</span></td><td>The check looked for its problem in this run and did not find it.</td><td>Nothing. A pass covers this run only.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="prose">
+            <h3>In scripts</h3>
+            <p>Every command ends with an exit code a script can test:</p>
+            <div class="tablewrap"><table>
+              <tbody>
+                <tr><td class="n"><code>0</code></td><td>everything passed (warnings allowed)</td></tr>
+                <tr><td class="n"><code>1</code></td><td>a check failed</td></tr>
+                <tr><td class="n"><code>2</code></td><td>a check could not decide</td></tr>
+              </tbody>
+            </table></div>
+            <p><code>--strict</code> turns warnings into failures. <code>--json</code> prints the results as JSON, including the evidence behind each one.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ TRIPWIRES ============ -->
+      <section id="tripwires">
+        <h2>The 14 checks</h2>
+        <div class="prose"><p>Grouped by when in a test they apply. Open one for what goes wrong, why it changes your numbers, and the command that checks it. <code>inferlint explain T9</code> prints the same text in the terminal.</p></div>
+        <div class="toolbar">
+          <button class="btn" type="button" data-tw="open">Open all</button>
+          <button class="btn" type="button" data-tw="close">Close all</button>
+        </div>
+        <div class="twgroups" id="twgroups"></div>
+      </section>
+
+      <!-- ============ CHEAT SHEET ============ -->
+      <section id="cheatsheet">
+        <h2>Cheat sheet</h2>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th scope="col">When</th><th scope="col">Command</th><th scope="col">Checks</th></tr></thead>
+            <tbody>
+              <tr><td>Before starting a server</td><td><code>inferlint gpu-inspect</code></td><td>T2</td></tr>
+              <tr><td>After start-up</td><td><code>inferlint check-log boot.log</code></td><td>T5 T6 T12 (T4 T11 with 2+ logs)</td></tr>
+              <tr><td>After start-up</td><td><code>inferlint boot-facts boot.log</code></td><td>lists what the log says</td></tr>
+              <tr><td>Before the test</td><td><code>inferlint probe URL</code></td><td>T7</td></tr>
+              <tr><td>Before and after the test</td><td><code>inferlint snapshot URL -o before.json</code></td><td>saves the counters</td></tr>
+              <tr><td>During the test</td><td><code>inferlint watch URL -o run.series.jsonl &amp;</code></td><td>records the run</td></tr>
+              <tr><td>After the test</td><td><code>inferlint preemption before.json after.json</code></td><td>T1</td></tr>
+              <tr><td>After the test</td><td><code>inferlint rate before.json after.json</code></td><td>T10</td></tr>
+              <tr><td>After the test</td><td><code>inferlint series run.series.jsonl --snapshot after.json --requested N</code></td><td>T8 T9 T14</td></tr>
+              <tr><td>Any time after</td><td><code>inferlint report -o run.html …</code></td><td>all that apply</td></tr>
+              <tr><td>Stopping the server</td><td><code>inferlint teardown</code></td><td>T2 T3</td></tr>
+              <tr><td>Any time</td><td><code>inferlint explain T1</code></td><td>explains a check</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    <span>inferlint 0.1.1</span>
+    <span>Data: the recorded run in <a href="https://github.com/radianvector/inferlint/tree/main/tests/fixtures/vllm-0.28/live"><code>tests/fixtures/vllm-0.28/live/</code></a></span>
+    <span><a href="https://github.com/radianvector/inferlint">GitHub</a> · <a href="https://pypi.org/project/inferlint/">PyPI</a> · <a href="example-report.html">Example report</a></span>
+    <span>Apache-2.0 · <a href="https://radianvector.com/open-source/">RadianVector</a></span>
+  </footer>
+</div>
+
+<script>
+const DATA = {"series":{"t":[0.0,0.26,0.51,0.77,1.03,1.28,1.54,1.8,2.05,2.31,2.57,2.83,3.08,3.34,3.59,3.85,4.11,4.36,4.62,4.88,5.13,5.39,5.65,5.9,6.16,6.42,6.67,6.93,7.19,7.45,7.71,7.97,8.23,8.48,8.74,9.0,9.25,9.51,9.77,10.02,10.28,10.54,10.79,11.05,11.31,11.56,11.82,12.08,12.34,12.62,12.87,13.13,13.39,13.64,13.9,14.15,14.41,14.67,14.92,15.18,15.44,15.7,15.95,16.21,16.47,16.72,16.98,17.24,17.49,17.75,18.01,18.26,18.52,18.77,19.03,19.29,19.55,19.8,20.06,20.32,20.57,20.83,21.09,21.34,21.6,21.86,22.11,22.37,22.63,22.88,23.14,23.4,23.65,23.91,24.17,24.42,24.68,24.94,25.19,25.45,25.71,25.96,26.22,26.48,26.74,26.99,27.25,27.5,27.76,28.02,28.27,28.53,28.79,29.04,29.3,29.56,29.81,30.07,30.34,30.59,30.85,31.11,31.37,31.63,31.89,32.14,32.4,32.65,32.91,33.17,33.42,33.68,33.94,34.19,34.45,34.71,34.96,35.22,35.47,35.73,35.99,36.24,36.5,36.76,37.01,37.27,37.52,37.78,38.04,38.29,38.55,38.81,39.06,39.32,39.57,39.83,40.09,40.34,40.6,40.86,41.11,41.37,41.62,41.88,42.14,42.4,42.65,42.91,43.16,43.42,43.68,43.93,44.19,44.44,44.7,44.96,45.21,45.47,45.74,45.99,46.25,46.51,46.76,47.02,47.27,47.53,47.79,48.04,48.3,48.56,48.81,49.07,49.33,49.58,49.84,50.09,50.35,50.61,50.86,51.12,51.38,51.63,51.89,52.15,52.4,52.66,52.92,53.17,53.43,53.68,53.94,54.2,54.45,54.71,54.97,55.22,55.48,55.74,55.99,56.25,56.51,56.77,57.03,57.28,57.54,57.8,58.05,58.31,58.56,58.82,59.08,59.33,59.59,59.84,60.1,60.36,60.61,60.87,61.13,61.38,61.64,61.89,62.15,62.41,62.66,62.92,63.18,63.43,63.69,63.95,64.2,64.46,64.71,64.97,65.23,65.48,65.74,66.0,66.25,66.51,66.76,67.02,67.28,67.53,67.79,68.05,68.3,68.56,68.81,69.07,69.33,69.58,69.84,70.09,70.35,70.61,70.86,71.12,71.37,71.63,71.89,72.14,72.4,72.66,72.91,73.17,73.43,73.68,73.94,74.2,74.45,74.71,74.97,75.22,75.48,75.73,75.99,76.25,76.5,76.76,77.02,77.27,77.53,77.78,78.04,78.3,78.55,78.81,79.06,79.32,79.58,79.83,80.09,80.34,80.6,80.86,81.11,81.37,81.62,81.88,82.14,82.39,82.65,82.91,83.16,83.42,83.67,83.93,84.19,84.44,84.7,84.96,85.21,85.47,85.73,85.98,86.24,86.49,86.75,87.01,87.26,87.52,87.78,88.03,88.29,88.55,88.8,89.06,89.31,89.57,89.83,90.08,90.34,90.6,90.85,91.11,91.37,91.62,91.88,92.14,92.4,92.65,92.91,93.17,93.42],"run":[0,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,6,8,6,7,8,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,2,9,7,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,9,7,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,3,5,5,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,8,9,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,7,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,4,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,2],"wait":[0,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,26,24,26,25,24,24,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,24,17,18,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,14,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,13,15,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,15,12,12,6,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,2,5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"kv":[0,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,36,42,35,41,42,39,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,13,41,34,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,37,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,39,41,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,18,22,22,42,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,34,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,40,40,40,40,40,40,40,42,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,22,35,31,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,22,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,16,13,13,13,13,13,13,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,10,10,10,10,10,10,10],"pre":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,4,5,5,6,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,13,13,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,16,16,16,16,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22],"gen":[144,145,255,365,485,595,705,825,935,1045,1165,1275,1385,1505,1615,1725,1845,1955,2065,2185,2295,2405,2515,2635,2745,2855,2975,3085,3195,3315,3425,3535,3655,3765,3875,3985,4105,4215,4325,4435,4545,4665,4775,4885,4995,5115,5225,5335,5445,5565,5685,5795,5905,6015,6125,6235,6345,6455,6575,6685,6795,6905,7015,7103,7109,7116,7128,7135,7158,7221,7305,7389,7473,7557,7641,7725,7809,7893,7970,8054,8138,8222,8306,8383,8467,8551,8635,8719,8796,8880,8964,9048,9132,9216,9229,9231,9257,9336,9435,9534,9642,9741,9849,9948,10056,10155,10263,10362,10461,10569,10668,10776,10875,10983,11082,11181,11289,11388,11496,11595,11703,11802,11910,11976,12054,12174,12284,12394,12514,12624,12734,12854,12964,13074,13184,13304,13414,13524,13644,13754,13864,13974,14094,14204,14314,14424,14534,14654,14764,14874,14984,15104,15214,15324,15434,15544,15664,15774,15883,15906,15913,15947,16046,16145,16253,16352,16451,16559,16658,16757,16865,16964,17063,17162,17270,17369,17468,17576,17675,17783,17882,17981,18080,18188,18287,18386,18485,18593,18610,18613,18613,18663,18772,18871,18979,19078,19177,19285,19384,19492,19591,19699,19798,19897,20005,20104,20212,20311,20410,20518,20617,20725,20824,20923,21031,21130,21229,21319,21395,21493,21603,21713,21833,21943,22053,22163,22283,22393,22503,22613,22733,22843,22953,23063,23183,23293,23403,23513,23623,23743,23853,23963,24073,24183,24303,24413,24512,24622,24732,24842,24962,25072,25182,25287,25301,25373,25481,25580,25679,25787,25886,25985,26093,26192,26291,26390,26498,26597,26696,26804,26903,27002,27101,27209,27308,27407,27506,27614,27713,27812,27911,27998,28002,28060,28144,28228,28312,28396,28480,28564,28648,28732,28816,28900,28984,29068,29152,29236,29320,29404,29481,29565,29649,29733,29817,29901,29985,30069,30136,30185,30221,30260,30296,30332,30371,30407,30446,30482,30518,30557,30593,30629,30668,30704,30740,30779,30815,30851,30890,30926,30962,31001,31037,31073,31112,31148,31184,31223,31259,31295,31334,31370,31406,31442,31481,31517,31553,31592,31628,31664,31703,31739,31775,31814,31850,31886,31925,31961,31990,32016,32042,32066,32092,32118,32142]},"tripwires":[{"id":"T1","name":"Silent preemption","what":"When the GPU memory that holds requests in progress (the KV cache) fills up, vLLM pauses a request and throws away its working notes. Before the request can continue, it has to re-read everything so far to rebuild them. vLLM writes nothing in its log when this happens. Only a counter moves.","why":"Each paused request waits and then repeats work, so it finishes later than it should. Timing results include this hidden delay, and long requests suffer most. Searching the log for it finds nothing, even when it happened.","command":"inferlint preemption before.json after.json"},{"id":"T2","name":"Engine left running","what":"The usual way to stop vLLM, pkill -f \"vllm serve\", only reaches the front-end process. The engine process, which holds the model in GPU memory, renames itself VLLM::EngineCore and can keep running after the front end is gone.","why":"The next test starts on a GPU that is already mostly full and produces wrong numbers with no error. One low memory reading is not proof the GPU is free.","command":"inferlint teardown  |  inferlint gpu-inspect"},{"id":"T3","name":"Cleanup kills itself","what":"Running pkill -f \"vllm serve\" inside a one-line shell command also kills that shell, because the shell's own command line contains the same words.","why":"The rest of the cleanup never runs and the script ends with no message.","command":"inferlint teardown"},{"id":"T4","name":"Memory pool changes between starts","what":"Each time vLLM starts, it measures free memory and sets aside a pool for requests in progress. The same settings can get a different pool on the next start, and pool sizes come in fixed steps.","why":"Two runs with identical settings can differ by a whole step (9.4% in the recorded example), which looks like a real speed difference and is not one.","command":"inferlint check-log boot1.log boot2.log"},{"id":"T5","name":"Large memory blocks","what":"Models that mix attention layers with Mamba layers make vLLM hand out cache memory in large blocks, hundreds of tokens each, instead of 16-token blocks.","why":"A short request still occupies a whole block, so far fewer requests fit than the pool's token count suggests.","command":"inferlint check-log boot.log"},{"id":"T6","name":"Requested backend ignored","what":"The attention backend is the code that does the model's main calculation on the GPU. vLLM has several, such as FlashAttention, FlashInfer and Triton, and you can choose one when you start the server with --attention-backend. This checks that vLLM really used the one you asked for. With speculative decoding on, the small draft model that helps the main model picks its own backend and quietly ignores your choice.","why":"In the recorded case Triton was requested, but the draft model picked FlashInfer, which crashed on the first request, while the log showed Triton in use.","command":"inferlint check-log boot.log"},{"id":"T7","name":"Ready, then crashes","what":"A server can start, announce that it is ready, and crash as soon as the first real request arrives.","why":"A check that only waits for 'ready' passes a server that cannot serve anything.","command":"inferlint probe http://127.0.0.1:8000"},{"id":"T8","name":"Fewer users than requested","what":"A load tool can keep 32 requests open, but the server may only work on a few at a time and queue the rest.","why":"A result labelled '32 users' can describe a 10-user server.","command":"inferlint series run.series.jsonl --requested 32"},{"id":"T9","name":"Capacity shrinks as answers grow","what":"The number of requests that fit at once is 1 divided by the share of cache one request holds. Each answer takes more cache as it gets longer, so fewer fit as a run goes on, and the server evicts some to make room.","why":"A run has no single 'maximum concurrency'. It changes while the run is going, and every drop causes preemptions (T1).","command":"inferlint series run.series.jsonl"},{"id":"T10","name":"Whole-second timers","what":"Timing a run with whole seconds, such as $(date +%s), can be off by almost a second either way.","why":"On a 30-second test that is about 3%, enough to flip a close comparison.","command":"inferlint rate before.json after.json"},{"id":"T11","name":"KV memory varies between starts","what":"The memory left for the pool after loading the model and capturing CUDA graphs can differ slightly from one start to the next.","why":"A small difference can drop the pool by a whole step (T4).","command":"inferlint check-log boot1.log boot2.log"},{"id":"T12","name":"Failures with no reason","what":"When a server fails to start, simple log searches often miss the real error and record a blank reason.","why":"A failure without a reason cannot be fixed, repeated or trusted.","command":"inferlint check-log boot.log"},{"id":"T13","name":"Old script adopts the new server","what":"A test script stopped while it waits for its server can mistake the next script's server for its own, report it ready, then shut it down.","why":"The next test dies partway through for no visible reason.","command":"see docs/orchestration.md"},{"id":"T14","name":"One block is reserved","what":"vLLM reports N cache blocks but always keeps one empty. Its usage gauge counts out of N - 1.","why":"Capacity worked out from the reported block count is slightly too high.","command":"inferlint series run.series.jsonl --snapshot after.json"}]};
+const NS = "http://www.w3.org/2000/svg";
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function sv(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function txt(parent, x, y, s, attrs = {}) {
+  const t = sv("text", Object.assign({ x, y }, attrs), parent);
+  t.textContent = s;
+  return t;
+}
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/* ---------- theme ---------- */
+$("#theme").addEventListener("click", () => {
+  const root = document.documentElement;
+  const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.dataset.theme = dark ? "light" : "dark";
+});
+
+/* ---------- contents ---------- */
+if (matchMedia("(min-width: 980px)").matches) $("#toc").open = true;
+const tocLinks = $$(".toc a");
+const obs = new IntersectionObserver(entries => {
+  for (const e of entries) if (e.isIntersecting) {
+    tocLinks.forEach(a => a.setAttribute("aria-current", a.getAttribute("href") === "#" + e.target.id ? "true" : "false"));
+  }
+}, { rootMargin: "-20% 0px -70% 0px" });
+$$("main > section").forEach(s => obs.observe(s));
+
+/* ---------- open a target (step, tripwire) ---------- */
+function openTarget(id, scroll = true) {
+  const t = document.getElementById(id);
+  if (!t) return;
+  const d = t.tagName === "DETAILS" ? t : t.querySelector("details");
+  if (d) d.open = true;
+  if (scroll) t.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  t.classList.remove("flash"); void t.offsetWidth; t.classList.add("flash");
+}
+document.addEventListener("click", e => {
+  const a = e.target.closest('a[href^="#"]');
+  if (!a) return;
+  const id = a.getAttribute("href").slice(1);
+  if (/^(tw-T\d+|s\d+)$/.test(id)) { e.preventDefault(); openTarget(id); history.replaceState(null, "", "#" + id); }
+});
+
+/* ---------- copy buttons ---------- */
+function addCopy(block) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "copy"; b.textContent = "Copy";
+  b.addEventListener("click", () => {
+    const code = block.querySelector("code").innerText.replace(/\s+#[^\n]*$/gm, "").trim();
+    const done = ok => { b.textContent = ok ? "Copied" : "Select + copy"; setTimeout(() => (b.textContent = "Copy"), 1600); };
+    const fallback = () => {
+      const r = document.createRange(); r.selectNodeContents(block.querySelector("code"));
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r); done(false);
+    };
+    try { navigator.clipboard.writeText(code).then(() => done(true), fallback); } catch { fallback(); }
+  });
+  block.appendChild(b);
+}
+
+/* ---------- colour the terminal output ---------- */
+function paintOut(pre) {
+  pre.innerHTML = pre.innerHTML
+    .replace(/\bPASS\b/g, '<span class="s-pass">PASS</span>')
+    .replace(/\bWARN\b/g, '<span class="s-warn">WARN</span>')
+    .replace(/\bFAIL\b/g, '<span class="s-fail">FAIL</span>')
+    .replace(/^(\s*…)$/gm, '<span class="dim">$1</span>');
+}
+
+/* ---------- chart: requests in flight ---------- */
+(function flowChart() {
+  const S = DATA.series, N = S.t.length, svg = $("#flow-svg");
+  const W = 720, L = 36, R = 12, T = 14, B = 230, RB = 292, AX = 314;
+  const tMax = 94, vMax = 34;
+  const x = t => L + (t / tMax) * (W - L - R);
+  const y = v => B - (v / vMax) * (B - T);
+  const total = S.run.map((r, i) => r + S.wait[i]);
+  for (const v of [0, 10, 20, 30]) {
+    sv("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), class: v ? "grid" : "base" }, svg);
+    txt(svg, L - 7, y(v) + 4, String(v), { "text-anchor": "end" });
+  }
+  for (let t = 0; t <= 90; t += 10) txt(svg, x(t), AX, t === 90 ? "90 s" : String(t), { "text-anchor": "middle" });
+  const steps = vals => {
+    const p = [];
+    for (let i = 0; i < N; i++) {
+      const xi = x(S.t[i]);
+      if (i) p.push([xi, y(vals[i - 1])]);
+      p.push([xi, y(vals[i])]);
+    }
+    return p;
+  };
+  const pts = a => a.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+  const top = steps(total), mid = steps(S.run);
+  sv("polygon", { points: pts(top.concat(mid.slice().reverse())), fill: "var(--wait)", "fill-opacity": ".85" }, svg);
+  sv("polygon", { points: pts(mid.concat([[x(S.t[N - 1]), y(0)], [x(S.t[0]), y(0)]])), fill: "var(--run)", "fill-opacity": ".92" }, svg);
+  sv("polyline", { points: pts(mid), fill: "none", stroke: "var(--surface)", "stroke-width": "2" }, svg);
+  sv("line", { x1: L, x2: W - R, y1: y(32), y2: y(32), class: "ref" }, svg);
+  txt(svg, x(94), y(32) - 7, "asked for: 32 at once", { class: "reflab", "text-anchor": "end" });
+  const at = t => S.t.findIndex(v => v >= t);
+  function pill(cx, cy, s) {
+    const g = sv("g", {}, svg), w = s.length * 6.3 + 16;
+    sv("rect", { x: cx - w / 2, y: cy - 11, width: w, height: 22, rx: 11, class: "pill" }, g);
+    txt(g, cx, cy + 4, s, { class: "pilltxt", "text-anchor": "middle" });
+  }
+  let i1 = at(33); pill(x(33), y(S.run[i1] / 2), "running: never more than 10");
+  let i2 = at(8); pill(x(8) + 44, y(S.run[i2] + S.wait[i2] / 2), "waiting in the queue");
+  // preemptions, merged when closer than 1.5 s
+  const ev = [];
+  for (let i = 1; i < N; i++) {
+    const d = S.pre[i] - S.pre[i - 1];
+    if (d > 0) {
+      const last = ev[ev.length - 1];
+      if (last && S.t[i] - last.t1 < 1.5) { last.n += d; last.t1 = S.t[i]; } else ev.push({ t: S.t[i], t1: S.t[i], n: d });
+    }
+  }
+  sv("line", { x1: L, x2: W - R, y1: RB, y2: RB, class: "base" }, svg);
+  txt(svg, L, B + 22, `Preemptions: ${S.pre[N - 1]} in all, and 0 lines about them in the server log`, { class: "reflab" });
+  for (const e of ev) {
+    const cx = x((e.t + e.t1) / 2);
+    sv("path", { d: `M${cx - 6},${RB - 16}L${cx + 6},${RB - 16}L${cx},${RB - 5}Z`, class: "tri" }, svg);
+    txt(svg, cx, RB - 20, String(e.n), { class: "trilab", "text-anchor": "middle" });
+  }
+  // hover layer
+  const cross = sv("line", { y1: T, y2: RB, class: "cross", visibility: "hidden" }, svg);
+  const d1 = sv("circle", { r: 4.5, fill: "var(--run)", class: "dot", visibility: "hidden" }, svg);
+  const d2 = sv("circle", { r: 4.5, fill: "var(--wait)", class: "dot", visibility: "hidden" }, svg);
+  const hit = sv("rect", { x: L, y: T, width: W - L - R, height: RB - T, fill: "transparent" }, svg);
+  const tip = $("#flow-tip"), wrap = $("#flow");
+  let cur = -1;
+  function show(i) {
+    cur = Math.max(0, Math.min(N - 1, i));
+    const cx = x(S.t[cur]);
+    for (const el of [cross, d1, d2]) el.setAttribute("visibility", "visible");
+    cross.setAttribute("x1", cx); cross.setAttribute("x2", cx);
+    d1.setAttribute("cx", cx); d1.setAttribute("cy", y(S.run[cur]));
+    d2.setAttribute("cx", cx); d2.setAttribute("cy", y(total[cur]));
+    tip.innerHTML = `<b>${S.t[cur].toFixed(1)} s</b><br>running ${S.run[cur]} · waiting ${S.wait[cur]}<br>preemptions so far ${S.pre[cur]}<br>KV blocks in use ${S.kv[cur]} of 42`;
+    tip.hidden = false;
+    const r = svg.getBoundingClientRect(), px = (cx / W) * r.width + svg.getBoundingClientRect().left - wrap.getBoundingClientRect().left + wrap.scrollLeft;
+    const tw = tip.offsetWidth, room = wrap.clientWidth + wrap.scrollLeft;
+    tip.style.left = (px + 14 + tw > room ? px - 14 - tw : px + 14) + "px";
+    tip.style.top = ((y(total[cur]) / 330) * r.height + 6) + "px";
+  }
+  function hide() { cur = -1; tip.hidden = true; for (const el of [cross, d1, d2]) el.setAttribute("visibility", "hidden"); }
+  function nearest(evt) {
+    const r = svg.getBoundingClientRect(), vx = ((evt.clientX - r.left) / r.width) * W;
+    const t = ((vx - L) / (W - L - R)) * tMax;
+    let lo = 0, hi = N - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (S.t[m] < t) lo = m + 1; else hi = m; }
+    return lo > 0 && Math.abs(S.t[lo - 1] - t) < Math.abs(S.t[lo] - t) ? lo - 1 : lo;
+  }
+  hit.addEventListener("pointermove", e => show(nearest(e)));
+  hit.addEventListener("pointerleave", hide);
+  wrap.addEventListener("keydown", e => {
+    const step = { ArrowRight: 4, ArrowLeft: -4, PageUp: 40, PageDown: -40 }[e.key];
+    if (step) { e.preventDefault(); show((cur < 0 ? 0 : cur) + step); }
+    else if (e.key === "Home") { e.preventDefault(); show(0); }
+    else if (e.key === "End") { e.preventDefault(); show(N - 1); }
+    else if (e.key === "Escape") hide();
+  });
+  wrap.addEventListener("blur", hide);
+  // numbers table
+  let rows = "";
+  for (let i = 0; i < N; i += 20) rows += `<tr><td class="n">${S.t[i].toFixed(1)}</td><td class="n">${S.run[i]}</td><td class="n">${S.wait[i]}</td><td class="n">${S.pre[i]}</td><td class="n">${S.kv[i]}</td></tr>`;
+  rows += `<tr><td class="n">${S.t[N - 1].toFixed(1)}</td><td class="n">${S.run[N - 1]}</td><td class="n">${S.wait[N - 1]}</td><td class="n">${S.pre[N - 1]}</td><td class="n">${S.kv[N - 1]}</td></tr>`;
+  $("#flow-table").innerHTML = `<table><thead><tr><th class="n">Seconds</th><th class="n">Running</th><th class="n">Waiting</th><th class="n">Preemptions so far</th><th class="n">Blocks in use (of 42)</th></tr></thead><tbody>${rows}</tbody></table>`;
+})();
+
+/* ---------- 3D pool: a replay of the recorded run ---------- */
+(function pool() {
+  const S = DATA.series, N = S.t.length, svg = $("#pool-svg");
+  const BLOCKS = 42, SLOTS = 10, TOTAL = 32, MAXH = 7, QMAX = 26, DUR = 15000;
+  const a = 20, c = a * 0.866, s = a / 2, ox = 70, oy = 128, gap = 1.55;
+  const iso = (u, v) => [ox + (u - v) * c, oy + (u + v) * s];
+  const P = ps => ps.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+  // floor
+  const u0 = -0.45, u1 = (SLOTS - 1) * gap + 1.45, v0 = -0.45, v1 = 1.45;
+  const fl = [iso(u0, v0), iso(u1, v0), iso(u1, v1), iso(u0, v1)].map(p => [p[0], p[1] + a]);
+  sv("polygon", { points: P(fl), class: "floor" }, svg);
+  const towers = [], ghosts = [];
+  for (let i = 0; i < SLOTS; i++) {
+    const [bx, by] = iso(i * gap, 0);
+    const foot = [[bx, by + a], [bx + c, by + s + a], [bx, by + 2 * s + a], [bx - c, by + s + a]];
+    ghosts.push(sv("polygon", { points: P(foot), class: "ghost off" }, svg));
+    const cubes = [];
+    for (let j = 0; j < MAXH; j++) {
+      const y0 = by - j * a;
+      const g = sv("g", { class: "cube off" }, svg);
+      sv("polygon", { class: "l", points: P([[bx - c, y0 + s], [bx, y0 + 2 * s], [bx, y0 + 2 * s + a], [bx - c, y0 + s + a]]) }, g);
+      sv("polygon", { class: "r", points: P([[bx, y0 + 2 * s], [bx + c, y0 + s], [bx + c, y0 + s + a], [bx, y0 + 2 * s + a]]) }, g);
+      sv("polygon", { class: "t", points: P([[bx, y0], [bx + c, y0 + s], [bx, y0 + 2 * s], [bx - c, y0 + s]]) }, g);
+      cubes.push(g);
+    }
+    towers.push(cubes);
+  }
+  const [ex0, ey0] = fl[3], [ex1, ey1] = fl[2];
+  const lx = (ex0 + ex1) / 2 - 8, ly = (ey0 + ey1) / 2 + 16;
+  txt(svg, lx, ly, "GPU memory for requests: 42 blocks", { class: "lab", "text-anchor": "middle", transform: `rotate(30 ${lx.toFixed(1)} ${ly.toFixed(1)})` });
+  // queue
+  const b = 11, c2 = b * 0.866, s2 = b / 2, qx = 505, qy = 118, sp = 1.32, th = 4;
+  txt(svg, qx, qy - 22, "the queue", { class: "lab", "text-anchor": "middle" });
+  const tiles = [];
+  for (let k = 0; k < QMAX; k++) {
+    const col = k % 5, row = Math.floor(k / 5);
+    const tx = qx + (col - row) * c2 * sp, ty = qy + (col + row) * s2 * sp;
+    const g = sv("g", { class: "tile off" }, svg);
+    sv("polygon", { class: "s", points: P([[tx - c2, ty + s2], [tx, ty + 2 * s2], [tx + c2, ty + s2], [tx + c2, ty + s2 + th], [tx, ty + 2 * s2 + th], [tx - c2, ty + s2 + th]]) }, g);
+    sv("polygon", { class: "t", points: P([[tx, ty], [tx + c2, ty + s2], [tx, ty + 2 * s2], [tx - c2, ty + s2]]) }, g);
+    tiles.push(g);
+  }
+  // gauge
+  const cells = $("#cells");
+  for (let k = 0; k < BLOCKS; k++) cells.appendChild(document.createElement("i"));
+  const cellEls = $$("i", cells);
+  const input = $("#pool-t"), out = $("#pool-readout"), btn = $("#play"), preBox = $("#p-pre-box");
+  input.max = N - 1;
+  const firstPre = S.pre.findIndex(v => v > 0);
+  $("#mark-pre").style.left = ((firstPre / (N - 1)) * 100).toFixed(1) + "%";
+
+  // The recording has the blocks in use, not each request's share: split the total evenly.
+  function heights(run, kv) {
+    const base = run ? Math.floor(kv / run) : 0, extra = run ? kv - base * run : 0;
+    return towers.map((_, i) => (i < run ? Math.min(MAXH, base + (i < extra ? 1 : 0)) : 0));
+  }
+  function readout(i, run, wait, done, pre, avg) {
+    if (i === 0) return `The recording starts just before the first request. Press <strong>Play the run</strong>, or drag the slider.`;
+    if (pre === 0) return `Each request starts with <strong>4 blocks</strong>. 42 ÷ 4 = 10.5, so <strong>${run} run</strong> and <strong>${wait} wait</strong>. The benchmark asked for 32; <a href="#tw-T8">T8</a> reports the difference.`;
+    if (wait > 0) return `As answers grow past 784 tokens they need more blocks, and fewer fit. Now <strong>${run} run</strong>, holding ${avg} blocks each on average, and ${wait} wait. To make room, vLLM has pushed a running request back to the queue <strong>${pre === 1 ? "once" : pre + " times"}</strong> so far. Each one must re-read its prompt and answer so far before it can continue. vLLM writes nothing in its log about this; only a counter moves (<a href="#tw-T1">T1</a>, <a href="#tw-T9">T9</a>).`;
+    return `The queue is empty. ${done} of 32 requests have finished and ${run} are still running. Preemptions in all: <strong>${pre}</strong> (<a href="#tw-T1">T1</a>).`;
+  }
+
+  let cur = -1, lastText = "", freshN = 0, freshUntil = 0;
+  function show(i, stagger) {
+    i = Math.max(0, Math.min(N - 1, i));
+    if (i === cur) return;
+    const prev = cur;
+    cur = i;
+    const run = S.run[i], wait = S.wait[i], kv = S.kv[i], pre = S.pre[i];
+    const done = i === 0 ? 0 : TOTAL - run - wait;
+    const h = heights(run, kv);
+    towers.forEach((cubes, ti) => cubes.forEach((g, j) => {
+      const on = j < h[ti];
+      if (on !== g.classList.contains("off")) return;
+      g.style.transitionDelay = on && stagger && !reduced ? ti * 18 + j * 30 + "ms" : "0ms";
+      g.classList.toggle("off", !on);
+    }));
+    ghosts.forEach((g, ti) => g.classList.toggle("off", !(wait > 0 && ti >= run)));
+    // a preempted request goes back to the end of the queue
+    const now = performance.now();
+    if (prev >= 0 && i > prev && i - prev < 8 && pre > S.pre[prev]) {
+      freshN = pre - S.pre[prev]; freshUntil = now + 1500;
+      preBox.classList.remove("flash"); void preBox.offsetWidth; preBox.classList.add("flash");
+    } else if (prev >= 0 && (i < prev || i - prev >= 8)) freshN = 0;
+    const fresh = now < freshUntil ? freshN : 0;
+    tiles.forEach((g, k) => { g.classList.toggle("off", k >= wait); g.classList.toggle("new", k < wait && k >= wait - fresh); });
+    cellEls.forEach((e, k) => e.classList.toggle("used", k < kv));
+    const avg = run ? (kv / run).toFixed(1) : "–";
+    $("#p-t").textContent = S.t[i].toFixed(1);
+    $("#p-run").textContent = run;
+    $("#p-wait").textContent = wait;
+    $("#p-per").textContent = avg;
+    $("#p-done").textContent = done;
+    $("#p-pre").textContent = pre;
+    preBox.classList.toggle("pre", pre > 0);
+    $("#p-used").textContent = `${kv} in use, ${BLOCKS - kv} free`;
+    input.value = i;
+    input.setAttribute("aria-valuetext", `${S.t[i].toFixed(1)} seconds`);
+    out.classList.toggle("alarm", pre > 0 && wait > 0);
+    const text = readout(i, run, wait, done, pre, avg);
+    if (text !== lastText) { out.innerHTML = text; lastText = text; }
+  }
+
+  let raf = 0, playing = false;
+  function setPlaying(p) {
+    playing = p;
+    btn.textContent = p ? "Pause" : cur >= N - 1 ? "Play again" : cur > 0 ? "Continue" : "Play the run";
+    out.setAttribute("aria-live", p ? "off" : "polite");
+  }
+  function play() {
+    cancelAnimationFrame(raf);
+    if (cur >= N - 1) show(0, false);
+    const i0 = cur, t0 = performance.now();
+    setPlaying(true);
+    const tick = now => {
+      const i = Math.min(N - 1, i0 + Math.floor(((now - t0) / DUR) * (N - 1)));
+      show(i, true);
+      if (i < N - 1 && playing) raf = requestAnimationFrame(tick);
+      else setPlaying(false);
+    };
+    raf = requestAnimationFrame(tick);
+  }
+  function pause() { cancelAnimationFrame(raf); setPlaying(false); }
+  let touched = false;
+  btn.addEventListener("click", () => { touched = true; playing ? pause() : play(); });
+  input.addEventListener("input", () => { touched = true; pause(); show(+input.value, false); });
+
+  svg.classList.add("init"); cells.classList.add("init");
+  show(0, false);
+  requestAnimationFrame(() => requestAnimationFrame(() => { svg.classList.remove("init"); cells.classList.remove("init"); }));
+  // play once, the first time the picture is in view
+  if (!reduced && "IntersectionObserver" in window) {
+    const io = new IntersectionObserver(es => {
+      if (!es.some(e => e.isIntersecting)) return;
+      io.disconnect();
+      if (!touched && !playing && cur === 0) play();
+    }, { threshold: 0.6 });
+    io.observe($("#pool .stage"));
+  }
+})();
+
+/* ---------- timeline ---------- */
+(function timeline() {
+  const svg = $("#tl-svg");
+  const lanes = { server: 52, load: 104, lint: 152 };
+  txt(svg, 0, lanes.server + 4, "vLLM server", { class: "lane" });
+  txt(svg, 0, lanes.load + 4, "your load test", { class: "lane" });
+  txt(svg, 0, lanes.lint + 4, "inferlint", { class: "lane" });
+  for (const k in lanes) sv("line", { x1: 130, x2: 1005, y1: lanes[k], y2: lanes[k], class: "rail" }, svg);
+  sv("rect", { x: 195, y: lanes.server - 13, width: 225, height: 26, rx: 6, class: "bar-boot" }, svg);
+  txt(svg, 307, lanes.server + 4, "start-up · 2 min 4 s", { class: "bartxt", "text-anchor": "middle" });
+  sv("rect", { x: 420, y: lanes.server - 13, width: 485, height: 26, rx: 6, class: "bar-serve" }, svg);
+  txt(svg, 662, lanes.server + 4, "ready, serving", { class: "bartxt", "text-anchor": "middle" });
+  sv("rect", { x: 585, y: lanes.load - 13, width: 255, height: 26, rx: 6, class: "bar-load" }, svg);
+  txt(svg, 712, lanes.load + 4, "32 requests · 93.7 s", { class: "bartxt", "text-anchor": "middle" });
+  for (let xx = 572; xx <= 850; xx += 5) sv("line", { x1: xx, x2: xx, y1: lanes.lint - 7, y2: lanes.lint + 7, class: "tick" }, svg);
+  txt(svg, 712, lanes.lint + 30, "a reading every 0.25 s", { "text-anchor": "middle" });
+  const marks = [
+    [1, 160, "lint", "gpu-inspect", 1], [2, 195, "server", "vllm serve", -1], [3, 450, "lint", "check-log", 1],
+    [4, 492, "lint", "probe", -1], [5, 532, "lint", "snapshot", 1], [6, 566, "lint", "watch", -1],
+    [7, 585, "load", "", 0], [8, 866, "lint", "snapshot", 1], [11, 905, "lint", "teardown", -1],
+    [9, 948, "lint", "checks", 1], [10, 985, "lint", "report", -1]
+  ];
+  for (const [n, mx, lane, lab, side] of marks) {
+    const cy = lanes[lane];
+    const g = sv("g", { class: "mk", tabindex: "0", role: "link", "aria-label": `Step ${n}${lab ? ": " + lab : ""}` }, svg);
+    sv("circle", { cx: mx, cy, r: 12 }, g);
+    txt(g, mx, cy + 4, String(n), { class: "n" });
+    if (lab) txt(g, mx, side > 0 ? cy + 31 : cy - 20, lab, { class: "mlab", "text-anchor": "middle" });
+    const go = () => openTarget("s" + n);
+    g.addEventListener("click", go);
+    g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  }
+  txt(svg, 1005, 16, "time →", { "text-anchor": "end" });
+})();
+
+/* ---------- part B commands ---------- */
+(function partB() {
+  const F = "tests/fixtures/vllm-0.28";
+  const C = [
+    { t: "Explain a check in plain English", bash: "inferlint explain T1", ps: "inferlint explain T1",
+      out: "T1  Silent preemption\n    When the GPU memory that holds requests in progress (the KV cache) fills up, vLLM\n    pauses a request and throws away its working notes. Before the request can continue,\n    it has to re-read everything so far to rebuild them. vLLM writes nothing in its log\n    when this happens. Only a counter moves.\n    …" },
+    { t: "List what the start-up log says", bash: "inferlint boot-facts $L/boot.log", ps: "inferlint boot-facts $L\\boot.log",
+      out: "vllm_version                 0.28.0\nselected_backends            ['FLASH_ATTN']\ncandidate_backends           ('FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION')\nattention_block_size         784\nmamba_page_padding_pct       0.13\nkv_pool_tokens               26093\nmax_concurrency              1.59\nmax_concurrency_request_len  16384\navailable_kv_cache_gib       2.09\nmodel_load_gib               17.71\n…" },
+    { t: "Check the start-up log", bash: "inferlint check-log $L/boot.log", ps: "inferlint check-log $L\\boot.log",
+      out: "[T12] PASS  no failure in log\n[ T5] WARN  attention block size forced to 784 tokens (requested 16); each request's KV is allocated in 784-token units\n[ T6] PASS  nothing to check: the server was started without --attention-backend, so vLLM chose its own (FLASH_ATTN) and nothing could be ignored; there was no draft model either" },
+    { t: "Count the hidden preemptions", bash: "inferlint preemption $L/before.snapshot.json $L/after.snapshot.json", ps: "inferlint preemption $L\\before.snapshot.json $L\\after.snapshot.json",
+      out: "[ T1] FAIL  22 preemptions during the run" },
+    { t: "Measure the speed with a precise clock", bash: "inferlint rate $L/before.snapshot.json $L/after.snapshot.json", ps: "inferlint rate $L\\before.snapshot.json $L\\after.snapshot.json",
+      out: "[T10] PASS  341.44 tokens/s over 93.720s; an integer-second timer would say 344.09 (+0.77%)" },
+    { t: "Compare asked-for and achieved concurrency", bash: "inferlint series $L/run.series.jsonl --snapshot $L/after.snapshot.json --requested 32", ps: "inferlint series $L\\run.series.jsonl --snapshot $L\\after.snapshot.json --requested 32",
+      out: "[T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block\n[ T9] WARN  ceiling moved between 7 and 10 as requests grew (one request held 9.5% to 14.3% of the cache); concurrency was not a constant of this run\n[ T8] FAIL  requested 32 concurrent, server never ran more than 10" },
+    { t: "Compare two starts with the same settings", bash: `inferlint check-log ${F}/boot_pool_level_hi.log ${F}/boot_pool_level_lo.log`, ps: `inferlint check-log ${F.replace(/\//g, "\\")}\\boot_pool_level_hi.log ${F.replace(/\//g, "\\")}\\boot_pool_level_lo.log`,
+      out: "[T12] PASS  boot_pool_level_hi.log: no failure in log\n[ T5] WARN  boot_pool_level_hi.log: attention block size forced to 416 tokens (requested 16); each request's KV is allocated in 416-token units\n[ T6] PASS  boot_pool_level_hi.log: nothing to check: …\n[T12] PASS  boot_pool_level_lo.log: no failure in log\n[ T5] WARN  boot_pool_level_lo.log: attention block size forced to 416 tokens (requested 16); …\n[ T6] PASS  boot_pool_level_lo.log: nothing to check: …\n[ T4] WARN  same flags, 2 different pools: 12,405 to 13,575 tokens (9.43% apart) across boot_pool_level_hi.log, boot_pool_level_lo.log; compare results only within one pool\n[T11] WARN  same flags, KV cache memory varied: 1.44 to 1.59 GiB" },
+    { t: "Make the full report", bash: "inferlint report -o run.html --requested 32 --boot-log $L/boot.log \\\n    --before $L/before.snapshot.json --after $L/after.snapshot.json --series $L/run.series.jsonl",
+      ps: "inferlint report -o run.html --requested 32 --boot-log $L\\boot.log --before $L\\before.snapshot.json --after $L\\after.snapshot.json --series $L\\run.series.jsonl",
+      out: "8 checks (4 pass, 2 warn, 2 fail) -> run.html", after: "Then open <code>run.html</code> in any browser. It works offline." }
+  ];
+  const host = $("#b-cmds");
+  C.forEach((c, i) => {
+    const d = document.createElement("details");
+    if (i === 0) d.open = true;
+    d.innerHTML = `<summary><span class="st">${esc(c.t)}</span></summary><div class="body">
+      <div class="code" data-os="bash"><pre><code>${esc(c.bash)}</code></pre></div>
+      <div class="code" data-os="ps" hidden><pre><code>${esc(c.ps)}</code></pre></div>
+      <p class="see">You'll see</p><pre class="out">${esc(c.out)}</pre>${c.after ? `<p class="hint">${c.after}</p>` : ""}</div>`;
+    host.appendChild(d);
+  });
+  const tabs = $$('.tabs [role="tab"]');
+  function setOS(os) {
+    tabs.forEach(t => t.setAttribute("aria-selected", String(t.dataset.os === os)));
+    $$('#b3 .code[data-os]').forEach(el => (el.hidden = el.dataset.os !== os));
+    try { localStorage.setItem("inferlint-os", os); } catch {}
+  }
+  tabs.forEach(t => t.addEventListener("click", () => setOS(t.dataset.os)));
+  let saved = null;
+  try { saved = localStorage.getItem("inferlint-os"); } catch {}
+  setOS(saved || (/Win/.test(navigator.platform) ? "ps" : "bash"));
+})();
+
+/* ---------- tripwires ---------- */
+(function tripwires() {
+  const by = {}; DATA.tripwires.forEach(t => (by[t.id] = t));
+  const groups = [
+    ["In the start-up log", "check-log", ["T12", "T5", "T6", "T4", "T11"]],
+    ["On the first requests", "probe", ["T7"]],
+    ["During and after the run", "preemption, rate, series", ["T1", "T8", "T9", "T14", "T10"]],
+    ["Stopping the server", "teardown, gpu-inspect", ["T2", "T3"]],
+    ["In scripts that run many tests", "a rule for your scripts", ["T13"]]
+  ];
+  const host = $("#twgroups");
+  for (const [title, how, ids] of groups) {
+    const g = document.createElement("div"); g.className = "twgroup";
+    g.innerHTML = `<h3>${esc(title)} <span>${esc(how)}</span></h3>`;
+    for (const id of ids) {
+      const t = by[id]; if (!t) continue;
+      const cmd = t.command.startsWith("inferlint")
+        ? t.command.split("  |  ").map(c => `<div class="code"><pre><code>${esc(c)}</code></pre></div>`).join("")
+        : `<p>${esc(t.command)}</p>`;
+      const d = document.createElement("details");
+      d.className = "tw"; d.id = "tw-" + id;
+      d.innerHTML = `<summary><span class="id">${id}</span><span class="nm">${esc(t.name)}</span><span class="cmd">${esc(t.command.split("  |  ")[0].replace(/^inferlint /, ""))}</span></summary>
+        <div class="body"><p>${esc(t.what)}</p><p><strong>Why it matters.</strong> ${esc(t.why)}</p>${cmd}</div>`;
+      g.appendChild(d);
+    }
+    host.appendChild(g);
+  }
+})();
+
+/* ---------- open / close all, copy, paint ---------- */
+$$("[data-steps]").forEach(b => b.addEventListener("click", () => $$("#steps details").forEach(d => (d.open = b.dataset.steps === "open"))));
+$$("[data-tw]").forEach(b => b.addEventListener("click", () => $$("#twgroups details").forEach(d => (d.open = b.dataset.tw === "open"))));
+$$(".code").forEach(addCopy);
+$$("pre.out").forEach(paintOut);
+if (/^#(tw-T\d+|s\d+)$/.test(location.hash)) openTarget(location.hash.slice(1));
+</script>
+
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>inferlint</title>
+<meta name="description" content="inferlint measures what your inference server actually did, and flags what it didn't tell you.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Cdefs%3E%3ClinearGradient id=%22inferlint-g%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe14d%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ff5c1f%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22url%28%23inferlint-g%29%22/%3E%3Cpath d=%22M4 18h7l3-9 4 15 3-6h7%22 fill=%22none%22 stroke=%22%2314110f%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
+<style>
+:root{
+  --page:#fbfbfc;--surface:#ffffff;--ink:#0d0f12;--ink-2:#474d55;--muted:#616871;
+  --hair:rgba(13,15,18,.09);--accent:#1b62d4;--hover:rgba(27,98,212,.06);--code-bg:#f3f4f7;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;
+  --page:#08090a;--surface:#0f1113;--ink:#f4f5f7;--ink-2:#b2b7be;--muted:#8d939b;
+  --hair:rgba(255,255,255,.09);--accent:#5fa0ff;--hover:rgba(95,160,255,.08);--code-bg:#15181c;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:40px 16px 64px;display:flex;flex-direction:column;gap:28px}
+.brand{display:flex;align-items:center;gap:10px;font:700 13px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.brand svg{width:28px;height:28px}
+h1{margin:0;font-size:clamp(28px,5vw,40px);line-height:1.2;letter-spacing:-.01em;font-weight:600}
+p{margin:0;color:var(--ink-2)}
+code{font-family:var(--mono);font-size:14px;background:var(--code-bg);border:1px solid var(--hair);border-radius:8px;padding:10px 14px;display:block;overflow-x:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.cards a{display:flex;flex-direction:column;gap:6px;padding:18px;border:1px solid var(--hair);border-radius:14px;background:var(--surface);color:inherit;text-decoration:none}
+.cards a:hover{background:var(--hover);border-color:var(--accent)}
+.cards b{font-size:18px;color:var(--accent)}
+.cards span{color:var(--ink-2);font-size:15px}
+footer{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;color:var(--muted);border-top:1px solid var(--hair);padding-top:16px}
+footer a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe14d"/><stop offset="1" stop-color="#ff5c1f"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lg)"/><path d="M4 18h7l3-9 4 15 3-6h7" fill="none" stroke="#14110f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>inferlint</div>
+  <h1>inferlint measures what your inference server actually did—and flags what it didn't tell you.</h1>
+  <p>It reads a vLLM server's start-up log and counters around a benchmark, measures achieved concurrency, preemptions, KV-cache use, GPU state and timing, and checks the run for 14 known problems. It works alongside whatever load tool you already use.</p>
+  <code>pipx install inferlint</code>
+  <nav class="cards" aria-label="Pages">
+    <a href="tutorial.html"><b>Tutorial</b><span>A GPU run step by step, and how to try inferlint without a GPU, using one recorded vLLM run.</span></a>
+    <a href="example-report.html"><b>Example report</b><span>The HTML report inferlint made for that run: what happened, every verdict, and charts of what the server did.</span></a>
+  </nav>
+  <footer>
+    <a href="https://github.com/radianvector/inferlint">GitHub</a>
+    <a href="https://pypi.org/project/inferlint/">PyPI</a>
+    <a href="https://radianvector.com/open-source/">RadianVector open source</a>
+    <span>Apache-2.0</span>
+  </footer>
+</div>
+</body>
+</html>
