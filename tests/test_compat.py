@@ -145,3 +145,34 @@ def test_t8_says_admission_control_rejected_the_rest() -> None:
         bench, telemetry.load(d / "before.snapshot.json"), telemetry.load(d / "after.snapshot.json")
     )
     assert t15.status is Status.PASS and t15.evidence["server_finished"] == 16
+
+
+def test_two_starts_with_the_same_flags_drew_pools_48_percent_apart() -> None:
+    """Qwen3-8B (bf16) on vLLM 0.30, same flags and load, started twice 20 minutes apart.
+
+    The first start compiled the model from scratch (torch.compile 20.7 s) and vLLM counted
+    1.14 GiB more consumed memory and a 1 GiB higher activation peak; the second loaded the
+    compiled graph. The KV pool was 32,336 tokens, then 47,888. With the smaller pool the
+    32 requests were preempted 3 times; with the larger one, not at all.
+    """
+    d1, d2 = FX / "vllm-0.30" / "qwen3-8b-start1", FX / "vllm-0.30" / "qwen3-8b-start2"
+    f1, f2 = bootlog.parse_file(d1 / "boot.log"), bootlog.parse_file(d2 / "boot.log")
+    assert (f1.kv_pool_tokens, f2.kv_pool_tokens) == (32336, 47888)
+    assert (f1.compiled_fresh, f2.compiled_fresh) == (True, False)
+    assert (f1.consumed_gib, f2.consumed_gib) == (16.56, 15.42)
+    assert (f1.peak_activation_gib, f2.peak_activation_gib) == (1.3, 0.31)
+    (t4,) = checks.check_same_pool([f1, f2], ["start1", "start2"])
+    assert t4.status is Status.WARN and "48.10% apart" in t4.message
+    (t11,) = checks.check_kv_memory_stable([f1, f2], ["start1", "start2"])
+    assert t11.message == (
+        "same flags, KV cache memory varied: 4.44 to 6.58 GiB (weights and non-torch memory "
+        "15.42 to 16.56 GiB; peak activation 0.31 to 1.3 GiB; 1 of 2 starts compiled the "
+        "model from scratch)"
+    )
+    pre = [
+        checks.check_no_preemption(
+            telemetry.load(d / "before.snapshot.json"), telemetry.load(d / "after.snapshot.json")
+        ).evidence["preemptions"]
+        for d in (d1, d2)
+    ]
+    assert pre == [3, 0]

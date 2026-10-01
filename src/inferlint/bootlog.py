@@ -151,6 +151,23 @@ _FIELDS: tuple[_Field, ...] = (
         [r"CUDA graph pool memory: ([\d.]+) GiB \(actual\)"],
         lambda m: _num(m.group(1)),
     ),
+    # How vLLM split the memory it was given: what it counts as used, and the activation
+    # peak it measured. Their sum, less the budget, is what the KV cache gets.
+    _f(
+        "memory_split",
+        "GiB for consumed memory",
+        [
+            r"Actual usage is (?P<c>[\d.]+) GiB for consumed memory \(weights \+ non-torch\), "
+            r"(?P<p>[\d.]+) GiB for peak activation"
+        ],
+        lambda m: (_num(m.group("c")), _num(m.group("p"))),
+    ),
+    _f(
+        "compile_s",
+        "torch.compile took",
+        [r"torch\.compile took ([\d.]+) s in total"],
+        lambda m: _num(m.group(1)),
+    ),
     _f(
         "cudagraph_mode_downgrade",
         "is not supported with spec-decode",
@@ -200,15 +217,62 @@ _FIELDS: tuple[_Field, ...] = (
         lambda m: m.group("b"),
     ),
 )
+# ---- TensorRT-LLM (verified on 1.3.0rc29)
+_TRT_FIELDS: tuple[_Field, ...] = (
+    _f(
+        "engine_version",
+        "TensorRT LLM version:",
+        [r"TensorRT LLM version: (?P<v>\S+)"],
+        lambda m: m.group("v"),
+    ),
+    # Printed twice: once for a dry run sizing the pool, then for the pool itself.
+    _f(
+        "trt_kv_pool",
+        "for max tokens in paged KV cache",
+        [r"Allocated (?P<g>[\d.]+) GiB for max tokens in paged KV cache \((?P<tok>\d+)\)"],
+        lambda m: (int(m.group("tok")), _num(m.group("g"))),
+    ),
+    _f(
+        "page_size",
+        "tokens per block=",
+        [r"tokens per block=(?P<n>\d+)"],
+        lambda m: int(m.group("n")),
+    ),
+    _f(
+        "trt_limits",
+        "max_num_requests=",
+        [r"max_num_requests=(?P<n>\d+), max_num_tokens=\d+, max_batch_size=(?P<b>\d+)"],
+        lambda m: (int(m.group("n")), int(m.group("b"))),
+    ),
+    _f(
+        "model_load_gib",
+        "after loading weights (inside torch)",
+        [r"after loading weights \(inside torch\) in memory usage profiling: ([\d.]+) GiB"],
+        lambda m: _num(m.group(1)),
+    ),
+    _f("trt_llm_args", "LLM Args:", [r"LLM Args:\s*$"], lambda m: True),
+)
+# TensorRT-LLM's settings, as printed on the line after "LLM Args:".
+_TRT_ARG = re.compile(
+    r"\b(attn_backend|max_batch_size|max_num_tokens|max_seq_len|free_gpu_memory_fraction|"
+    r"tokens_per_block|capacity_scheduler_policy|enable_chunked_prefill|speculative_config|"
+    r"kv_cache_dtype|disable_overlap_scheduler)=(?:<\w+\.)?'?([\w.]+)"
+)
+
 # Values SGLang draws afresh at every start, so not part of a start's configuration.
 _SGLANG_VOLATILE_ARGS = frozenset({"random_seed"})
 # Fields a log prints more than once and that add up (one CUDA graph line per phase).
-_SUMMED = frozenset({"sglang_cudagraph_gib"})
+_SUMMED = frozenset({"sglang_cudagraph_gib", "compile_s"})
+# Fields a log prints more than once by design, the last being the one that holds.
+_LAST_WINS = frozenset({"trt_kv_pool", "trt_limits", "page_size", "engine_version"})
 
 _READY_MARKERS = ("Application startup complete",)
 # Backend selections after this line belong to the speculative-decoding drafter.
 _DRAFTER_MARKER = "Loading drafter model"
 _EAGER_MARKER = "Cudagraph is disabled under eager mode"
+# torch.compile ran from scratch, or loaded a graph an earlier start had compiled.
+_COMPILED_MARKER = "Compiling a graph for compile range"
+_CACHED_COMPILE_MARKER = "Directly load AOT compilation"
 
 
 @dataclass(frozen=True)
@@ -222,6 +286,7 @@ class Unparsed:
 class BootFacts:
     engine: str | None = None  # "vllm", "sglang"; None when the log does not say
     vllm_version: str | None = None
+    engine_version: str | None = None  # another engine's version, when its log prints it
     # The version the server reported over HTTP, for engines whose log does not print it.
     server_version: str | None = None
     non_default_args: dict[str, Any] | None = None
@@ -248,6 +313,10 @@ class BootFacts:
     cudagraph_estimated_gib: float | None = None
     cudagraph_actual_gib: float | None = None
     cudagraph_mode_downgrade: tuple[str, str] | None = None
+    consumed_gib: float | None = None  # weights and non-torch memory, as vLLM counts it
+    peak_activation_gib: float | None = None
+    compile_s: float | None = None  # torch.compile, all models together
+    compiled_fresh: bool | None = None  # compiled from scratch (True) or loaded (False)
     speculative: bool | None = None
     ready: bool = False
     ready_lineno: int | None = None
@@ -261,7 +330,7 @@ class BootFacts:
     @property
     def version(self) -> str | None:
         """The engine's version: from the log (vLLM) or from the server (SGLang)."""
-        return self.vllm_version or self.server_version
+        return self.vllm_version or self.engine_version or self.server_version
 
     @property
     def config_args(self) -> dict[str, Any] | None:
@@ -313,12 +382,22 @@ def _record(
         facts.kv_pool_tokens, facts.available_kv_cache_gib = value
     elif name == "sglang_cudagraph_gib":
         facts.cudagraph_actual_gib = round((facts.cudagraph_actual_gib or 0.0) + value, 2)
+    elif name == "compile_s":
+        facts.compile_s = round((facts.compile_s or 0.0) + value, 2)
+    elif name == "memory_split":
+        facts.consumed_gib, facts.peak_activation_gib = value
     elif name == "sglang_running_cap_reason":
         facts.running_cap, facts.running_cap_reason = value
     elif name == "sglang_limits":
         facts.kv_pool_tokens, facts.running_cap = value
     elif name == "sglang_default_backend":
         facts.selected_backends.append(value)
+    elif name == "trt_kv_pool":
+        facts.kv_pool_tokens, facts.available_kv_cache_gib = value
+    elif name == "trt_limits":
+        facts.running_cap, facts.requested_running = value
+    elif name == "trt_llm_args":
+        pass  # the settings are on the next line; parse() reads them
     else:
         setattr(facts, name, value)
 
@@ -336,7 +415,7 @@ def parse(text: str) -> BootFacts:
         pm = _PREFIX.match(line)
         if pm:
             procs.setdefault(pm.group("proc"), set()).add(int(pm.group("pid")))
-        for fld in _FIELDS:
+        for fld in (*_FIELDS, *_TRT_FIELDS):
             if not fld.anchor.search(line):
                 continue
             for pat in fld.patterns:
@@ -353,6 +432,10 @@ def parse(text: str) -> BootFacts:
                 facts.unparsed.append(Unparsed(fld.name, lineno, strip_log_prefix(line)[:300]))
         if _EAGER_MARKER in line:
             facts.cudagraphs = False
+        if _COMPILED_MARKER in line:
+            facts.compiled_fresh = True
+        elif _CACHED_COMPILE_MARKER in line and facts.compiled_fresh is None:
+            facts.compiled_fresh = False
         if not facts.ready and any(k in line for k in _READY_MARKERS):
             facts.ready = True
             facts.ready_lineno = lineno
@@ -360,7 +443,9 @@ def parse(text: str) -> BootFacts:
     facts.processes = {k: sorted(v) for k, v in procs.items()}
     # selected_backend legitimately repeats (one line per attention group); not a conflict.
     facts.conflicts = {
-        k: v for k, v in seen.items() if len(v) > 1 and k != "selected_backend" and k not in _SUMMED
+        k: v
+        for k, v in seen.items()
+        if len(v) > 1 and k != "selected_backend" and k not in _SUMMED | _LAST_WINS
     }
     engine = from_log(text)
     facts.engine = engine.key if engine is not None else None
@@ -379,6 +464,9 @@ def parse(text: str) -> BootFacts:
         if facts.cudagraphs is None:
             facts.cudagraphs = not sa.get("disable_cuda_graph", False)
 
+    if facts.engine == "trtllm":
+        _trt_settings(facts, text)
+
     args = facts.non_default_args or {}
     if facts.non_default_args is not None:
         rb = args.get("attention_backend")
@@ -389,6 +477,26 @@ def parse(text: str) -> BootFacts:
     if facts.cudagraphs is None and facts.cudagraph_actual_gib is not None:
         facts.cudagraphs = True
     return facts
+
+
+def _trt_settings(facts: BootFacts, text: str) -> None:
+    """TensorRT-LLM prints every setting on the line after "LLM Args:"; keep the main ones.
+
+    The whole line identifies the start's configuration for comparing starts (T4, T11).
+    """
+    lines = text.splitlines()
+    at = next((i for i, ln in enumerate(lines) if ln.rstrip().endswith("LLM Args:")), None)
+    if at is None or at + 1 >= len(lines):
+        return
+    line = _ANSI.sub("", lines[at + 1]).strip()
+    found: dict[str, Any] = {"llm_args": line}
+    for m in _TRT_ARG.finditer(line):
+        found.setdefault(m.group(1), m.group(2))  # nested configs repeat names; first wins
+    facts.server_args = found
+    backend = found.get("attn_backend")
+    if backend and not facts.selected_backends:
+        facts.selected_backends.append(str(backend))
+    facts.speculative = found.get("speculative_config") not in (None, "None")
 
 
 def parse_file(path: str | Path) -> BootFacts:

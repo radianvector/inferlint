@@ -378,7 +378,7 @@ def run_checks(
     """
     results: list[CheckResult] = []
     if before is not None and after is not None:
-        results.append(checks.check_no_preemption(before, after, series))
+        results.append(checks.check_no_preemption(before, after, series, facts))
         results.append(checks.precise_rate(before, after))
     if series is None:
         return results
@@ -636,8 +636,13 @@ def _tiles(rep: Report) -> str:
     t1 = rep.result("T1")
     if t1 is not None and "preemptions" in t1.evidence:
         n = float(t1.evidence["preemptions"])
-        sub = "Requests evicted and recomputed. The server log mentions none."
-        tiles.append(_tile("Preemptions", _fmt_n(n), sub, t1.status))
+        eng = rep.engine
+        logged = (
+            f"{eng.name} logs each." if eng.logs_preemptions else "The server log mentions none."
+        )
+        sub = f"Requests evicted and recomputed. {logged}"
+        label = "Retractions" if eng.preemption == "retraction" else "Preemptions"
+        tiles.append(_tile(label, _fmt_n(n), sub, t1.status))
     t10 = rep.result("T10")
     if t10 is not None and "rate_per_s" in t10.evidence:
         rate = float(t10.evidence["rate_per_s"])
@@ -896,7 +901,7 @@ def _status_note(rep: Report) -> str:
             "numbers from this run cannot be taken at face value."
         )
         sm = rep.summary
-        if sm.done and not sm.finished.get("error"):
+        if sm.done and sm.finished and not sm.finished.get("error"):
             text += f" The server finished {sm.done:,} requests with no errors."
     return f'<p class="status-note">{escape(text)}</p>'
 

@@ -147,7 +147,8 @@ def _cmd_watch(a: argparse.Namespace) -> int:
 
 def _cmd_preemption(a: argparse.Namespace) -> int:
     s = series.read(a.series) if a.series else None
-    r = checks.check_no_preemption(telemetry.load(a.before), telemetry.load(a.after), s)
+    facts = bootlog.parse_file(a.boot_log) if a.boot_log else None
+    r = checks.check_no_preemption(telemetry.load(a.before), telemetry.load(a.after), s, facts)
     return _emit([r], a.json, a.strict)
 
 
@@ -395,6 +396,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("before")
     p.add_argument("after")
     p.add_argument("--series", help="recording of the run, for engines that count no preemptions")
+    p.add_argument("--boot-log", help="the server's boot log (its scheduler policy)")
     p.set_defaults(fn=_cmd_preemption)
 
     p = add("rate", "T10: token throughput from the snapshots' own clocks")

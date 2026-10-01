@@ -33,6 +33,8 @@ class Engine:
     # once they first count (see telemetry.counter_delta)
     witnesses: tuple[tuple[str, str], ...] = ()
     logs_preemptions: bool = False  # does it write a log line when it preempts?
+    # Are its gauges updated only when a request completes, not at every step?
+    gauges_lag: bool = False
 
     def witness(self, counter: str) -> str | None:
         return dict(self.witnesses).get(counter)
@@ -68,6 +70,10 @@ TRTLLM = Engine(
     tested=("1.3",),
     preemption="pause",
     serve="trtllm-serve",
+    # Its stats collector sleeps until a request completes, then logs every step since
+    # (1.3.0rc29, serve/openai_server.py), so a reading shows the state as of the last
+    # completion. Requests that finish together leave the gauges still until the end.
+    gauges_lag=True,
 )
 ENGINES: tuple[Engine, ...] = (VLLM, SGLANG, TRTLLM)
 

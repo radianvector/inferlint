@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from .benchresult import BenchResult
 from .blocks import infer_blocks, predict_concurrency
 from .bootlog import BootFacts
-from .engines import Engine, from_names
+from .engines import Engine, by_key, from_names
 from .failures import Phase, classify
 from .metricnames import VLLM
 from .result import CheckResult, Status
@@ -51,7 +51,10 @@ def _delta(before: Snapshot, after: Snapshot, engine: Engine, name: str) -> floa
 
 
 def check_no_preemption(
-    before: Snapshot, after: Snapshot, series: Series | None = None
+    before: Snapshot,
+    after: Snapshot,
+    series: Series | None = None,
+    facts: BootFacts | None = None,
 ) -> CheckResult:
     """T1. vLLM preempts silently: no log line at the default level, only a counter.
 
@@ -64,7 +67,7 @@ def check_no_preemption(
     engine = engine_of(before, after)
     word = engine.preemption
     if engine.metrics.preemptions is None:
-        return _paused_in_recording(engine, series)
+        return _paused_in_recording(engine, series, facts)
     name = engine.metrics.preemptions
     try:
         n = _delta(before, after, engine, name)
@@ -86,11 +89,15 @@ def check_no_preemption(
     return CheckResult("T1", Status.PASS, f"no {word}s", {**ev, "preemptions": 0})
 
 
-def _paused_in_recording(engine: Engine, series: Series | None) -> CheckResult:
+def _paused_in_recording(
+    engine: Engine, series: Series | None, facts: BootFacts | None = None
+) -> CheckResult:
     """T1 for an engine that exports only a gauge of paused requests, from the recording.
 
-    A pause that starts and ends between two readings is not seen, so a recording can
-    show that pauses happened, and a lower bound on them, but never that none did.
+    A pause that starts and ends between two readings is not seen, so a recording alone
+    can show that pauses happened, never that none did. TensorRT-LLM's default scheduler
+    policy, GUARANTEED_NO_EVICT, admits a request only when its whole output fits, so it
+    never pauses one; with that policy in the boot log, no pause seen is a pass.
     """
     gauge = engine.metrics.paused
     ev: dict[str, object] = {"engine": engine.key, "series": gauge}
@@ -112,6 +119,18 @@ def _paused_in_recording(engine: Engine, series: Series | None) -> CheckResult:
             f"requests were paused for recompute in {len(busy)} of {len(seen)} readings, up "
             f"to {max(busy):g} at once ({engine.name} counts no pauses, so the number is "
             "unknown)",
+            ev,
+        )
+    policy = ((facts.server_args or {}) if facts is not None else {}).get(
+        "capacity_scheduler_policy"
+    )
+    if policy == "GUARANTEED_NO_EVICT":
+        ev["capacity_scheduler_policy"] = policy
+        return CheckResult(
+            "T1",
+            Status.PASS,
+            f"no paused request in {len(seen)} readings, and the scheduler policy "
+            f"({policy}) admits a request only when its whole output fits",
             ev,
         )
     return CheckResult(
@@ -238,7 +257,9 @@ def check_kv_memory_stable(
     """T11. The memory left for KV cache can differ between boots of one config.
 
     CUDA-graph capture memory varies boot to boot. A small loss can drop the pool by one
-    whole level, so comparisons across boots need the per-boot figure recorded.
+    whole level, so comparisons across boots need the per-boot figure recorded. Where vLLM
+    prints how it split its budget, the message says which part moved, and how many of
+    the starts compiled the model from scratch rather than loading a cached graph.
     """
     groups, skipped = _groups(facts, labels)
     out: list[CheckResult] = []
@@ -264,15 +285,35 @@ def check_kv_memory_stable(
                 )
             )
         else:
+            ev["consumed_gib"] = {n: f.consumed_gib for n, f in g}
+            ev["peak_activation_gib"] = {n: f.peak_activation_gib for n, f in g}
+            ev["compiled_fresh"] = {n: f.compiled_fresh for n, f in g}
             out.append(
                 CheckResult(
                     "T11",
                     Status.WARN,
-                    f"same flags, KV cache memory varied: {vals[0]} to {vals[-1]} GiB",
+                    f"same flags, KV cache memory varied: {vals[0]} to {vals[-1]} GiB"
+                    + _memory_split_note([f for _, f in g]),
                     ev,
                 )
             )
     return out
+
+
+def _memory_split_note(boots: Sequence[BootFacts]) -> str:
+    """Which part of vLLM's memory split moved between starts, as vLLM printed it."""
+    parts: list[str] = []
+    for label, vals in (
+        ("weights and non-torch memory", [f.consumed_gib for f in boots]),
+        ("peak activation", [f.peak_activation_gib for f in boots]),
+    ):
+        known = sorted({v for v in vals if v is not None})
+        if len(known) > 1:
+            parts.append(f"{label} {known[0]} to {known[-1]} GiB")
+    fresh = [f.compiled_fresh for f in boots]
+    if True in fresh and False in fresh:
+        parts.append(f"{fresh.count(True)} of {len(boots)} starts compiled the model from scratch")
+    return f" ({'; '.join(parts)})" if parts else ""
 
 
 def check_backend_honoured(facts: BootFacts) -> CheckResult:
@@ -286,7 +327,8 @@ def check_backend_honoured(facts: BootFacts) -> CheckResult:
         return CheckResult(
             "T6", Status.UNKNOWN, "no arguments line in the log; cannot tell what was requested"
         )
-    server = {"sglang": "SGLang"}.get(facts.engine or "", "vLLM")
+    server = by_key(facts.engine).name
+    flag = "attn_backend" if facts.engine == "trtllm" else "--attention-backend"
     ev: dict[str, object] = {
         "requested": facts.requested_backend,
         "target": facts.selected_backends,
@@ -296,7 +338,7 @@ def check_backend_honoured(facts: BootFacts) -> CheckResult:
     if facts.requested_backend is None:
         chosen = ", ".join(facts.selected_backends) or "one"
         msg = (
-            "nothing to check: the server was started without --attention-backend, so "
+            f"nothing to check: the server was started without {flag}, so "
             f"{server} chose its own ({chosen}) and nothing could be ignored"
         )
         if facts.speculative is False:
@@ -380,9 +422,21 @@ def check_concurrency_reached(
         ev["max_num_queued_tokens"] = args["max_num_queued_tokens"]
     if peak is None:
         return CheckResult("T8", Status.UNKNOWN, "series has no num_requests_running samples", ev)
+    lag = series.engine.gauges_lag
+    if lag:
+        ev["gauges_lag"] = True
     if peak >= requested:
         return CheckResult(
             "T8", Status.PASS, f"reached {peak:g} running (requested {requested})", ev
+        )
+    if lag:
+        return CheckResult(
+            "T8",
+            Status.UNKNOWN,
+            f"requested {requested} concurrent, the recording never showed more than "
+            f"{peak:g}; {series.engine.name} updates the gauge only when a request "
+            "completes, so it may have run more in between",
+            ev,
         )
     msg = f"requested {requested} concurrent, server never ran more than {peak:g}"
     limit = cap if isinstance(cap, int) and cap < requested else None
@@ -475,20 +529,27 @@ def concurrency_ceiling(
             if f"{min(shares):.1%}" == f"{max(shares):.1%}"
             else f"{min(shares):.1%} to {max(shares):.1%}"
         )
-        return CheckResult(
-            "T9",
-            Status.PASS,
+        msg = (
             f"one request holds {held} of {pool}; ceiling = floor(1/share) = {lo} "
-            f"on every {basis} sample",
-            ev,
+            f"on every {basis} sample"
         )
-    return CheckResult(
-        "T9",
-        Status.WARN,
+        return CheckResult("T9", Status.PASS, msg + _lag_note(series, ev), ev)
+    msg = (
         f"ceiling moved between {lo} and {hi} as requests grew (one request held "
         f"{min(shares):.1%} to {max(shares):.1%} of {pool}); concurrency was not a "
-        "constant of this run",
-        ev,
+        "constant of this run"
+    )
+    return CheckResult("T9", Status.WARN, msg + _lag_note(series, ev), ev)
+
+
+def _lag_note(series: Series, ev: dict[str, object]) -> str:
+    """For engines whose gauges move only when a request completes: say how little was seen."""
+    if not series.engine.gauges_lag:
+        return ""
+    ev["gauges_lag"] = True
+    return (
+        f" (from {ev.get('samples')} readings; {series.engine.name} updates its gauges "
+        "only when a request completes)"
     )
 
 
@@ -505,7 +566,7 @@ def check_null_block(series: Series, snapshot: Snapshot) -> CheckResult:
         return CheckResult(
             "T14",
             Status.UNKNOWN,
-            f"{engine.name} exports no block count to check the usage gauge against",
+            f"T14 checks vLLM's reserved null block; {engine.name} has none to check",
             {"engine": engine.key},
         )
     info = snapshot.metrics.info(cache_info)

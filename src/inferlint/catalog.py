@@ -119,8 +119,8 @@ TRIPWIRES: dict[str, Tripwire] = {
             "vllm:num_requests_running is the number the scheduler actually runs; the rest "
             "wait in its queue. Admission-control limits (--max-num-queued-reqs, "
             "--max-num-queued-tokens, vLLM 0.29 and later) can also reject requests.",
-            "A result labelled 'concurrency 32' can describe a server that never ran more "
-            "than 10 requests at once.",
+            "A result labelled 'concurrency 32' can describe a server that ran far fewer "
+            "requests at once (never more than 10 in the recorded vLLM run).",
             "inferlint series run.series.jsonl --requested 32",
         ),
         Tripwire(

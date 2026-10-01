@@ -105,7 +105,7 @@ def test_run_checks() -> None:
     assert t10.status is Status.PASS and t10.evidence["tokens"] == 32_000
 
     t14 = checks.check_null_block(s, after)
-    assert t14.status is Status.UNKNOWN and "SGLang exports no block count" in t14.message
+    assert t14.status is Status.UNKNOWN and "SGLang has none to check" in t14.message
 
     t8 = checks.check_concurrency_reached(s, 32, facts)
     assert t8.status is Status.FAIL and t8.evidence["peak_running"] == 1
@@ -186,4 +186,28 @@ def test_live_run_with_room_for_five() -> None:
     t9 = checks.concurrency_ceiling(s)
     assert t9.evidence["ceiling_min"] == t9.evidence["ceiling_max"] == 5  # = the peak
     t15 = checks.check_client_server_agree(benchresult.load(LIVE / "bench.json"), before, after)
+    assert t15.status is Status.PASS
+
+
+Q8B = FX / "qwen3-8b"
+
+
+def test_qwen3_8b_through_xray() -> None:
+    """``inferlint xray`` with Qwen3-8B (bf16) and 32 allowed to run.
+
+    The pool was 32,096 tokens, about vLLM's 32,336 for the same model and card. vLLM ran
+    all 32 and preempted 3 times; SGLang held 3 back and retracted nothing.
+    """
+    f = bootlog.parse_file(Q8B / "boot.log")
+    assert (f.kv_pool_tokens, f.available_kv_cache_gib, f.running_cap) == (32096, 4.4, 32)
+    before = telemetry.load(Q8B / "before.snapshot.json")
+    after = telemetry.load(Q8B / "after.snapshot.json")
+    s = series.read(Q8B / "run.series.jsonl")
+    assert s.engine is engines.SGLANG  # xray's own recording names the engine
+    assert checks.check_no_preemption(before, after, s).message == "no retractions"
+    t8 = checks.check_concurrency_reached(s, 32, f)
+    assert t8.status is Status.FAIL and t8.evidence["peak_running"] == 29
+    t9 = checks.concurrency_ceiling(s)
+    assert (t9.evidence["ceiling_min"], t9.evidence["ceiling_max"]) == (30, 31)
+    t15 = checks.check_client_server_agree(benchresult.load(Q8B / "bench.json"), before, after)
     assert t15.status is Status.PASS
