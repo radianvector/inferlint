@@ -105,7 +105,9 @@ def test_run_checks() -> None:
     assert t10.status is Status.PASS and t10.evidence["tokens"] == 32_000
 
     t14 = checks.check_null_block(s, after)
-    assert t14.status is Status.UNKNOWN and "SGLang has none to check" in t14.message
+    assert t14.status is Status.NOT_APPLICABLE and t14.ok
+    assert t14.message == "does not apply to SGLang: T14 is about vLLM's reserved null block"
+    t14.raise_for_status()  # never raises
 
     t8 = checks.check_concurrency_reached(s, 32, facts)
     assert t8.status is Status.FAIL and t8.evidence["peak_running"] == 1
@@ -135,10 +137,12 @@ def test_report() -> None:
     )
     assert rep.engine is engines.SGLANG and rep.title == "SGLang 0.5.20 run"
     assert {r.tripwire for r in rep.results} >= {"T1", "T5", "T6", "T8", "T9", "T10", "T12"}
-    assert "T14" not in {r.tripwire for r in rep.results}
+    t14 = rep.result("T14")
+    assert t14 is not None and t14.status is Status.NOT_APPLICABLE  # said, not left out
     assert rep.summary.done == 32 and rep.summary.finished == {}
     html = report.render(rep)
     assert "T14 (does not apply to SGLang)" in html
+    assert '<span class="pill not_applicable">' in html and "Does not apply" in html
     assert "SGLang 0.5.20" in html and "<dt>SGLang</dt><dd>0.5.20</dd>" in html
     assert "On SGLang: called a retraction" in html and "On TensorRT-LLM" not in html
     assert "updates these readings only when" not in html

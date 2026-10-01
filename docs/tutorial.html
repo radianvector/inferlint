@@ -282,6 +282,7 @@ pre.out .dim{color:var(--term-dim)}
 .pill.warn{background:var(--warning-bg);color:var(--warning-ink)}
 .pill.fail{background:var(--critical-bg);color:var(--critical-ink)}
 .pill.unknown{background:var(--unknown-bg);color:var(--unknown-ink)}
+.pill.not_applicable{background:none;color:var(--unknown-ink);box-shadow:inset 0 0 0 1px var(--hair)}
 .twocol{display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
 @media (min-width:880px){.twocol{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}}
 
@@ -344,7 +345,7 @@ footer{margin-top:72px;padding-top:18px;border-top:1px solid var(--hair);font-si
       <section id="start" class="hero">
         <p class="eyebrow">Tutorial</p>
         <h1>inferlint, step by step</h1>
-        <p class="lede">inferlint measures what your inference server actually did—and flags what it didn't tell you. From the start-up log and counters of a vLLM, SGLang or TensorRT-LLM server it measures achieved concurrency, preemptions, KV-cache use, GPU state and timing, and checks the run for 15 known problems. Each check answers Pass, Warning, Fail or Can't tell. It works alongside whatever load tool you already use. The examples on this page all come from one recorded run: vLLM 0.28 on an RTX 4090, a 27B model, 32 requests at once, 1,000 output tokens each. The commands are the same for the other two engines; <a href="#engines">what they need and how they differ</a> is below.</p>
+        <p class="lede">inferlint measures what your inference server actually did—and flags what it didn't tell you. From the start-up log and counters of a vLLM, SGLang or TensorRT-LLM server it measures achieved concurrency, preemptions, KV-cache use, GPU state and timing, and checks the run for 15 known problems. Each check answers Pass, Warning, Fail or Can't tell, or says it does not apply to the engine. It works alongside whatever load tool you already use. The examples on this page all come from one recorded run: vLLM 0.28 on an RTX 4090, a 27B model, 32 requests at once, 1,000 output tokens each. The commands are the same for the other two engines; <a href="#engines">what they need and how they differ</a> is below.</p>
 
         <figure class="card" style="margin:0">
           <div class="card-head">
@@ -710,6 +711,7 @@ inferlint xray -o run/ --serve "trtllm-serve serve $MODEL --config llm_api.yaml"
                 <tr><td><span class="pill warn"><svg viewBox="0 0 16 16"><path d="M8 3.5v6M8 12.2v.3"/></svg>Warning</span></td><td>Nothing is wrong on its own, but a setting or an effect changes how the numbers should be read.</td><td>Keep the warning with the results.</td></tr>
                 <tr><td><span class="pill unknown"><svg viewBox="0 0 16 16"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6 1v.6M8 12.2v.3"/></svg>Can't tell</span></td><td>A counter or log line the check needs was missing. It never counts as a pass. The terminal shows it as <code>????</code>.</td><td>Supply the missing file, or check the vLLM version.</td></tr>
                 <tr><td><span class="pill pass"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg>Pass</span></td><td>The check looked for its problem in this run and did not find it.</td><td>Nothing. A pass covers this run only.</td></tr>
+                <tr><td><span class="pill not_applicable"><svg viewBox="0 0 16 16"><path d="M4.5 8h7"/></svg>Does not apply</span></td><td>The tripwire is about a behaviour this engine does not have, such as vLLM's reserved KV block (<a href="#tw-T14">T14</a>) on SGLang or TensorRT-LLM. The terminal shows it as <code>N/A</code>.</td><td>Nothing.</td></tr>
               </tbody>
             </table>
           </div>

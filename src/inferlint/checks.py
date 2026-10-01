@@ -29,6 +29,7 @@ __all__ = [
     "check_null_block",
     "check_same_pool",
     "concurrency_ceiling",
+    "does_not_apply",
     "precise_rate",
     "running_cap",
     "with_timer_comparison",
@@ -579,6 +580,22 @@ def _lag_note(series: Series, ev: dict[str, object]) -> str:
     )
 
 
+def does_not_apply(tripwire: str, engine: Engine) -> CheckResult | None:
+    """The result for a tripwire about a behaviour ``engine`` does not have, else None.
+
+    T14 is about vLLM's reserved null block: an engine that exports no block count
+    (SGLang, TensorRT-LLM) gets "does not apply", never a pass or a "can't tell".
+    """
+    if tripwire == "T14" and engine.metrics.cache_info is None:
+        return CheckResult(
+            "T14",
+            Status.NOT_APPLICABLE,
+            f"does not apply to {engine.name}: T14 is about vLLM's reserved null block",
+            {"engine": engine.key},
+        )
+    return None
+
+
 def check_null_block(series: Series, snapshot: Snapshot) -> CheckResult:
     """T14. The usage gauge's denominator is ``num_gpu_blocks - 1``.
 
@@ -589,12 +606,9 @@ def check_null_block(series: Series, snapshot: Snapshot) -> CheckResult:
     engine = engine_of(snapshot)
     cache_info = engine.metrics.cache_info
     if cache_info is None:
-        return CheckResult(
-            "T14",
-            Status.UNKNOWN,
-            f"T14 checks vLLM's reserved null block; {engine.name} has none to check",
-            {"engine": engine.key},
-        )
+        na = does_not_apply("T14", engine)
+        assert na is not None
+        return na
     info = snapshot.metrics.info(cache_info)
     reported_s = None if info is None else info.get("num_gpu_blocks")
     if reported_s is None or not reported_s.isdigit():

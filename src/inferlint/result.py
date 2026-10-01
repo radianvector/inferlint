@@ -18,6 +18,9 @@ class Status(str, Enum):
     # The instrument could not decide: a series was missing, a line did not parse.
     # Never folded into PASS. A check that cannot see is not a check that passed.
     UNKNOWN = "unknown"
+    # The tripwire is about a behaviour this engine does not have (T14, vLLM's reserved
+    # null block, on SGLang and TensorRT-LLM). Neither a pass nor a failure.
+    NOT_APPLICABLE = "not_applicable"
 
 
 # How each status is printed. The JSON keeps Status.value ("fail"), which scripts read.
@@ -26,6 +29,7 @@ LABELS: dict[Status, str] = {
     Status.WARN: "WARN",
     Status.FAIL: "TRIPWIRE-FAILED",
     Status.UNKNOWN: "????",
+    Status.NOT_APPLICABLE: "N/A",
 }
 
 
@@ -44,7 +48,7 @@ class CheckResult:
 
     @property
     def ok(self) -> bool:
-        return self.status in (Status.PASS, Status.WARN)
+        return self.status in (Status.PASS, Status.WARN, Status.NOT_APPLICABLE)
 
     def raise_for_status(self, *, allow_warn: bool = True, allow_unknown: bool = False) -> None:
         bad = {Status.FAIL}

@@ -104,6 +104,11 @@ _MEANING = {
         "The tripwire looked for its problem in this run and did not find it.",
         "Nothing. A pass covers this run only.",
     ),
+    Status.NOT_APPLICABLE: (
+        "The tripwire is about a behaviour this engine does not have, such as vLLM's "
+        "reserved KV block (T14) on SGLang or TensorRT-LLM.",
+        "Nothing.",
+    ),
 }
 
 _TERMS = (
@@ -202,19 +207,28 @@ _TERMS = (
     ),
 )
 
-_ORDER = {Status.FAIL: 0, Status.WARN: 1, Status.UNKNOWN: 2, Status.PASS: 3}
+_ORDER = {
+    Status.FAIL: 0,
+    Status.WARN: 1,
+    Status.UNKNOWN: 2,
+    Status.PASS: 3,
+    Status.NOT_APPLICABLE: 4,
+}
 _LABEL = {
     Status.FAIL: "Tripwire failed",
     Status.WARN: "Warning",
     Status.UNKNOWN: "Can't tell",
     Status.PASS: "Pass",
+    Status.NOT_APPLICABLE: "Does not apply",
 }
+_QUIET = (Status.PASS, Status.NOT_APPLICABLE)  # folded under one line in the report
 # Icon glyphs (not emoji) so status never rests on colour alone.
 _ICON = {
     Status.PASS: '<path d="M3.5 8.5l3 3 6-7"/>',
     Status.WARN: '<path d="M8 3.5v6M8 12.2v.3"/>',
     Status.FAIL: '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>',
     Status.UNKNOWN: '<path d="M6 6a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6 1v.6M8 12.2v.3"/>',
+    Status.NOT_APPLICABLE: '<path d="M4.5 8h7"/>',
 }
 
 
@@ -392,7 +406,10 @@ def run_checks(
     if series is None:
         return results
     usable: int | None = None
-    if after is not None and checks.engine_of(after).metrics.cache_info is not None:
+    na = checks.does_not_apply("T14", series.engine)
+    if na is not None:
+        results.append(na)
+    elif after is not None and checks.engine_of(after).metrics.cache_info is not None:
         t14 = checks.check_null_block(series, after)
         results.append(t14)
         inferred = t14.evidence.get("inferred_usable_blocks")
@@ -703,7 +720,7 @@ def _tile(label: str, value: str, sub: str, status: Status | None) -> str:
 def _finding(r: CheckResult) -> str:
     tw = TRIPWIRES.get(r.tripwire)
     name = tw.name if tw else r.tripwire
-    what = f'<p class="what">{escape(tw.why)}</p>' if tw and r.status is not Status.PASS else ""
+    what = f'<p class="what">{escape(tw.why)}</p>' if tw and r.status not in _QUIET else ""
     return (
         f'<li class="finding {r.status.value}">'
         f'<div class="f-status">{_pill(r.status)}</div>'
@@ -715,13 +732,18 @@ def _finding(r: CheckResult) -> str:
 
 
 def _findings(rep: Report) -> str:
-    """Failures, warnings and unknowns in full; passed checks folded under one line."""
+    """Failures, warnings and unknowns in full; passed checks, and those that do not
+    apply to this engine, folded under one line."""
     ordered = sorted(rep.results, key=lambda r: (_ORDER[r.status], _tw_num(r.tripwire)))
-    shown = [r for r in ordered if r.status is not Status.PASS]
-    passed = [r for r in ordered if r.status is Status.PASS]
+    shown = [r for r in ordered if r.status not in _QUIET]
+    passed = [r for r in ordered if r.status in _QUIET]
     out = f'<ol class="findings">{"".join(_finding(r) for r in shown)}</ol>' if shown else ""
     if passed:
-        label = f"{len(passed)} passed" if shown else f"All {len(passed)} checks passed"
+        n_pass = sum(1 for r in passed if r.status is Status.PASS)
+        n_na = len(passed) - n_pass
+        label = f"{n_pass} passed" if shown else f"All {n_pass} checks passed"
+        if n_na:
+            label += f"; {n_na} {'does' if n_na == 1 else 'do'} not apply to {rep.engine.name}"
         out += (
             f'<details class="gloss passed"><summary>{label}</summary>'
             f'<ol class="findings">{"".join(_finding(r) for r in passed)}</ol></details>'
@@ -742,6 +764,7 @@ def _verdict(rep: Report) -> str:
     chips = "".join(
         f'<li class="count {s.value}"><span class="n">{counts[s]}</span>{_pill(s)}</li>'
         for s in sorted(_ORDER, key=lambda s: _ORDER[s])
+        if counts[s] or s is not Status.NOT_APPLICABLE
     )
     return f'<ul class="verdict" aria-label="Check results">{chips}</ul>'
 
@@ -834,12 +857,13 @@ def _facts(title: str, rows: Sequence[tuple[str, str]]) -> str:
 
 
 def _checked(rep: Report) -> tuple[str, str]:
-    ran = {r.tripwire for r in rep.results} & TRIPWIRES.keys()
+    na = {r.tripwire for r in rep.results if r.status is Status.NOT_APPLICABLE}
+    ran = ({r.tripwire for r in rep.results} & TRIPWIRES.keys()) - na
     missing: dict[str, list[str]] = {}
     for t in TRIPWIRES:
         if t not in ran:
             why = _NEEDS.get(t, "need other input")
-            if t == "T14" and rep.engine.metrics.cache_info is None:
+            if t in na or (t == "T14" and rep.engine.metrics.cache_info is None):
                 why = f"do not apply to {rep.engine.name}"
             missing.setdefault(why, []).append(t)
     groups: list[str] = []
@@ -974,8 +998,8 @@ def _status_glossary() -> str:
         for s in sorted(_ORDER, key=lambda s: _ORDER[s])
     )
     return (
-        '<details class="gloss"><summary>What Pass, Warning, Tripwire failed and Can\'t tell '
-        "mean</summary>"
+        '<details class="gloss"><summary>What Pass, Warning, Tripwire failed, Can\'t tell '
+        "and Does not apply mean</summary>"
         '<div class="tablewrap"><table class="meanings"><thead><tr>'
         '<th scope="col">Result</th><th scope="col">What it means</th>'
         '<th scope="col">What to do</th></tr></thead>'

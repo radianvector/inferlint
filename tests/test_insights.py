@@ -113,7 +113,8 @@ def test_the_report_shows_them_and_the_cache_chart() -> None:
     assert html.count('<li class="limit limit">') == 3
     assert 'id="fig-cache"' in html and "29 of them fit." in html
     assert 'id="fig-memory"' in html
-    assert "5 passed</summary>" in html  # passes folded; the failure and warning shown
+    # passes, and T14, which does not apply, folded; the failure and warning shown
+    assert "5 passed; 1 does not apply to SGLang</summary>" in html
 
 
 # --------------------------------------------------------------------------- the CLI

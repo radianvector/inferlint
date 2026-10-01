@@ -300,7 +300,10 @@ def _cmd_series(a: argparse.Namespace) -> int:
     results: list[CheckResult] = []
     usable: int | None = None
     snap = telemetry.load(a.snapshot) if a.snapshot else None
-    if snap is not None and checks.engine_of(snap).metrics.cache_info is not None:
+    na = checks.does_not_apply("T14", s.engine)
+    if na is not None:
+        results.append(na)
+    elif snap is not None and checks.engine_of(snap).metrics.cache_info is not None:
         r = checks.check_null_block(s, snap)
         results.append(r)
         if r.status is Status.PASS:
@@ -533,14 +536,16 @@ def _cmd_report(a: argparse.Namespace) -> int:
 
 
 def _counts(results: Sequence[CheckResult]) -> str:
-    """'8 checks (4 pass, 2 warn, 2 tripwire-failed)'."""
+    """'8 checks (4 pass, 2 warn, 2 tripwire-failed)', and how many do not apply."""
     counts = {s: sum(1 for r in results if r.status is s) for s in Status}
+    na = counts.pop(Status.NOT_APPLICABLE)
     summary = ", ".join(
         f"{n} {'unknown' if s is Status.UNKNOWN else LABELS[s].lower()}"
         for s, n in counts.items()
         if n
     )
-    return f"{len(results)} checks ({summary})"
+    text = f"{len(results) - na} checks ({summary})"
+    return text + (f"; {na} {'does' if na == 1 else 'do'} not apply" if na else "")
 
 
 def _cmd_explain(a: argparse.Namespace) -> int:

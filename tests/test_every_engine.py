@@ -99,7 +99,11 @@ def test_series(engine: str, capsys: pytest.CaptureFixture[str]) -> None:
         assert code == 1 and "server never ran more than 29" in out
     else:
         assert code == 0 and "[ T8] PASS  reached 32 running (requested 32)" in out
-    assert ("[T14] PASS" in out) is (engine == "vllm")  # vLLM's reserved block only
+    # vLLM's reserved block: checked on vLLM, and said not to apply on the others
+    assert ("[T14] PASS" in out) is (engine == "vllm")
+    na = "[T14] N/A  does not apply to {}: T14 is about vLLM's reserved null block"
+    if engine != "vllm":
+        assert na.format({"sglang": "SGLang", "trtllm": "TensorRT-LLM"}[engine]) in out
     if engine == "trtllm":
         assert "updates its gauges only when a request completes" in out
 

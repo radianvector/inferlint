@@ -29,6 +29,10 @@ upload dates (UTC).
   engine's client. SGLang's appends JSON lines (`--output-file`); its warm-up request,
   like the test request of the other two, is allowed for. `report RUN_FOLDER` finds
   `bench.jsonl` too.
+- **Does not apply** (`N/A` in the terminal, `"not_applicable"` in JSON): a tripwire
+  about a behaviour the engine does not have says so instead of being left out. T14,
+  vLLM's reserved KV block, does not apply to SGLang or TensorRT-LLM. It does not change
+  the exit status, and `raise_for_status()` does not raise on it.
 - `xray --serve` waits for the server at the `--host` and `--port` of the server
   command, or the engine's default port (SGLang: 30000), instead of always port 8000.
 - **What limited the run.** The report opens with up to three sentences, and `xray` and

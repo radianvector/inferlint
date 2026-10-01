@@ -376,9 +376,11 @@ A failed tripwire prints as `TRIPWIRE-FAILED`: the tripwire caught its problem. 
 and T12 that means the server failed; for every other tripwire the server worked, but a
 number from the run does not mean what it seems. Exit status is 0 when every tripwire
 passes (warnings allowed), 1 when one fails, and 2 when one cannot decide because a
-series or a log line was missing. A missing series is never read as zero. `--json` gives
-machine-readable results (`"status": "fail"` for a failed tripwire); `--strict` fails on
-warnings.
+series or a log line was missing. A missing series is never read as zero. A tripwire
+about a behaviour the engine does not have prints `N/A` and says so (T14, vLLM's reserved
+KV block, on SGLang and TensorRT-LLM); it does not change the exit status. `--json` gives
+machine-readable results (`"status": "fail"` for a failed tripwire, `"not_applicable"`
+for one that does not apply); `--strict` fails on warnings.
 
 ### The report
 
@@ -390,8 +392,8 @@ requests finished and failed, tokens generated, time spent queued, which tripwir
 checked and which need other files), the verdicts, with passed checks folded under one
 line, charts of what the server did over time and of its KV cache against the load, the
 boot facts and GPU memory, and a guide to every tripwire. Collapsible glossaries explain
-the terms (token, KV pool, block, preemption) and what Pass, Warning, Tripwire failed and
-Can't tell mean.
+the terms (token, KV pool, block, preemption) and what Pass, Warning, Tripwire failed,
+Can't tell and Does not apply mean.
 
 The page fetches nothing, so it opens offline and can be attached to a ticket as it is.
 It has a light/dark switch, every chart has a data table, and hovering (or the arrow
@@ -420,7 +422,8 @@ inferlint report tests/fixtures/vllm-0.28/live --requested 32 \
 ## Use it from Python
 
 Install it into your project's environment with `pip install inferlint`. Every check
-returns a `CheckResult` with a `status` (pass, warn, fail or unknown), a `message`, and
+returns a `CheckResult` with a `status` (pass, warn, fail, unknown or not_applicable),
+a `message`, and
 the `evidence` behind it.
 
 ```python

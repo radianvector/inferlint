@@ -96,6 +96,7 @@ table.meanings{font-size:14px}
 .pill.warn{color:var(--warning-ink);background:var(--warning-bg)}
 .pill.fail{color:var(--critical-ink);background:var(--critical-bg)}
 .pill.unknown{color:var(--unknown-ink);background:var(--unknown-bg)}
+.pill.not_applicable{color:var(--unknown-ink);background:none;box-shadow:inset 0 0 0 1px var(--hair)}
 .verdict{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:10px 22px}
 .count{display:flex;align-items:center;gap:8px}
 .count .n{font:600 22px/1 var(--display);font-variant-numeric:tabular-nums;min-width:1ch}

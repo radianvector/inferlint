@@ -98,7 +98,8 @@ def test_report() -> None:
         requested=32,
     )
     assert rep.engine is engines.TRTLLM and rep.title == "TensorRT-LLM 1.3.0rc29 run"
-    assert "T14" not in {r.tripwire for r in rep.results}
+    t14 = rep.result("T14")
+    assert t14 is not None and t14.status is Status.NOT_APPLICABLE
     # TensorRT-LLM says why each request finished, as vLLM does.
     assert rep.summary.finished == {"length": 32}
     html = report.render(rep)
