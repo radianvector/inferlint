@@ -960,6 +960,12 @@ def _charts(rep: Report) -> str:
     xs = _times(s)
     evs = _events(s, xs)
     figs: list[str] = []
+    lag = (
+        f" {escape(rep.engine.name)} updates these readings only when a request completes, "
+        "so between completions a line holds its last value."
+        if rep.engine.gauges_lag
+        else ""
+    )
 
     running = [smp.running for smp in s.samples]
     waiting = [smp.waiting for smp in s.samples]
@@ -998,7 +1004,7 @@ def _charts(rep: Report) -> str:
     cap = (
         "Requests the server was working on, requests queued behind them, and how many "
         "requests of their current size fit in the cache when it is full. Triangles mark "
-        "preemptions."
+        "preemptions." + lag
     )
     figs.append(
         _figure(
@@ -1036,7 +1042,7 @@ def _charts(rep: Report) -> str:
         _figure(
             "fig-kv",
             "KV cache in use",
-            "Share of the cache holding requests." + escape(denom),
+            "Share of the cache holding requests." + escape(denom) + lag,
             svg,
             leg,
             _table(["seconds", "% in use"], rows),
@@ -1059,7 +1065,8 @@ def _charts(rep: Report) -> str:
             _figure(
                 "fig-tput",
                 "Output tokens per second",
-                "Generated tokens over a sliding one-second window, from the server's own counter.",
+                "Generated tokens over a sliding one-second window, from the server's own "
+                "counter." + lag,
                 svg,
                 "",
                 _table(["seconds", "tokens/s"], rows),

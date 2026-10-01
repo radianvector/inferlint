@@ -105,6 +105,7 @@ def test_report() -> None:
     assert "T14 (does not apply to TensorRT-LLM)" in html
     assert "On TensorRT-LLM: a request is paused for recompute" in html
     assert "On SGLang" not in html
+    assert html.count("updates these readings only when a request completes") == 3  # charts
 
 
 def test_pauses_are_counted_from_the_log() -> None:
