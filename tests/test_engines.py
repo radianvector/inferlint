@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -91,3 +92,50 @@ def test_a_servers_descendants_are_its_processes() -> None:
         Proc(600, 100, ("python3", "-m", "inferlint.cli", "teardown"), "python3"),  # us
     ]
     assert [p.pid for p in server_processes(procs, self_pid=600)] == [200, 300, 400]
+
+
+def test_the_scraper_remembers_where_the_metrics_are() -> None:
+    calls: list[str] = []
+    pages = {
+        "http://y:1/metrics": '{"iter": 1}',
+        "http://y:1/prometheus/metrics": "trtllm_num_requests_running 1.0\n",
+    }
+
+    def fetch(url: str, timeout: float) -> str:
+        calls.append(url)
+        return pages[url]
+
+    telemetry.scrape("http://y:1", fetch=fetch)
+    telemetry.scrape("http://y:1/", fetch=fetch)
+    assert calls == [
+        "http://y:1/metrics",
+        "http://y:1/prometheus/metrics",
+        "http://y:1/prometheus/metrics",  # the second scrape goes straight there
+    ]
+
+
+def test_server_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    """vLLM and TensorRT-LLM answer /version; SGLang answers /get_server_info."""
+    import io
+    import json
+    import urllib.error
+    import urllib.request
+
+    from inferlint import xray
+
+    def serve(pages: Mapping[str, object]):
+        def urlopen(url: str, timeout: float = 0) -> io.BytesIO:
+            path = url.split("x:1", 1)[1]
+            if path not in pages:
+                raise urllib.error.URLError("404")
+            return io.BytesIO(json.dumps(pages[path]).encode())
+
+        return urlopen
+
+    monkeypatch.setattr(urllib.request, "urlopen", serve({"/version": {"version": "0.30.0"}}))
+    assert xray.server_version("http://x:1") == "0.30.0"
+    sglang = {"/get_server_info": {"version": "0.5.20", "max_running_requests": 32}}
+    monkeypatch.setattr(urllib.request, "urlopen", serve(sglang))
+    assert xray.server_version("http://x:1") == "0.5.20"
+    monkeypatch.setattr(urllib.request, "urlopen", serve({}))
+    assert xray.server_version("http://x:1") is None
