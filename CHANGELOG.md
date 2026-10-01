@@ -4,7 +4,32 @@ Each release on [PyPI](https://pypi.org/project/inferlint/) and its
 [GitHub release](https://github.com/radianvector/inferlint/releases). Dates are the PyPI
 upload dates (UTC).
 
-## 0.2.0 (unreleased)
+## Unreleased
+
+### Added
+
+- **SGLang and TensorRT-LLM.** inferlint tells the engine from the server's metric names
+  and boot log; the commands, `xray` and the report work the same way for all three.
+  Tested on SGLang 0.5.20 and TensorRT-LLM 1.3.0rc29. See
+  [docs/engines.md](https://github.com/radianvector/inferlint/blob/main/docs/engines.md).
+- T11 says which part of vLLM's memory split moved between starts, and how many starts
+  compiled the model from scratch.
+
+### Changed
+
+- `teardown`, `gpu-inspect` and `xray` count every process a server started as part of
+  it.
+- T12 names a bare `AssertionError` by its `assert` line, and a generic exception by the
+  function it was raised in.
+
+### Fixed
+
+- T12 no longer reports tracebacks the server says it ignores, or errors logged before
+  the server became ready, as a failed start; T7 no longer reports an error after which
+  the server kept serving.
+- T8 names a server's own running limit only when the run reached it.
+
+## 0.2.0 (2026-10-01)
 
 ### Added
 
