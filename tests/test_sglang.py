@@ -211,3 +211,24 @@ def test_qwen3_8b_through_xray() -> None:
     assert (t9.evidence["ceiling_min"], t9.evidence["ceiling_max"]) == (30, 31)
     t15 = checks.check_client_server_agree(benchresult.load(Q8B / "bench.json"), before, after)
     assert t15.status is Status.PASS
+
+
+def test_a_retraction() -> None:
+    """Qwen3-8B with ``--schedule-conservativeness 0.3``: SGLang admits more than fits.
+
+    One request was retracted with 981 tokens generated. SGLang logged a warning, and its
+    counter, absent until then, appeared at 1.
+    """
+    d = FX / "retraction"
+    before = telemetry.load(d / "before.snapshot.json")
+    after = telemetry.load(d / "after.snapshot.json")
+    assert before.metrics.total("sglang:num_retracted_requests_total") is None
+    assert after.metrics.total("sglang:num_retracted_requests_total") == 1
+    t1 = checks.check_no_preemption(before, after)
+    assert t1.status is Status.FAIL
+    assert t1.message == "1 retraction during the run (SGLang logs a warning for each)"
+    assert "KV cache pool is full. Retract requests. #retracted_reqs: 1" in (
+        d / "boot.log"
+    ).read_text(encoding="utf-8")
+    s = series.read(d / "run.series.jsonl")
+    assert {x.preemptions for x in s.samples} == {0.0, 1.0}  # the chart marks it

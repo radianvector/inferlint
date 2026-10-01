@@ -271,6 +271,10 @@ _READY_MARKERS = ("Application startup complete",)
 _DRAFTER_MARKER = "Loading drafter model"
 _EAGER_MARKER = "Cudagraph is disabled under eager mode"
 # torch.compile ran from scratch, or loaded a graph an earlier start had compiled.
+# TensorRT-LLM logs each pause at INFO ("MaxUtilizationScheduler: request ID 72 -> pause");
+# the count means something only when INFO lines ("[TRT-LLM] [I]") are logged at all.
+_TRT_PAUSE = re.compile(r"request ID \d+ -> pause\b")
+_TRT_INFO = "[TRT-LLM] [I]"
 _COMPILED_MARKER = "Compiling a graph for compile range"
 _CACHED_COMPILE_MARKER = "Directly load AOT compilation"
 
@@ -317,6 +321,8 @@ class BootFacts:
     peak_activation_gib: float | None = None
     compile_s: float | None = None  # torch.compile, all models together
     compiled_fresh: bool | None = None  # compiled from scratch (True) or loaded (False)
+    # Requests TensorRT-LLM paused for recompute, from its log; None if it logs no INFO.
+    pauses: int | None = None
     speculative: bool | None = None
     ready: bool = False
     ready_lineno: int | None = None
@@ -466,6 +472,8 @@ def parse(text: str) -> BootFacts:
 
     if facts.engine == "trtllm":
         _trt_settings(facts, text)
+        if _TRT_INFO in text:
+            facts.pauses = len(_TRT_PAUSE.findall(text))
 
     args = facts.non_default_args or {}
     if facts.non_default_args is not None:

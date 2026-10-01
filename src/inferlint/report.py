@@ -773,7 +773,7 @@ def _story(rep: Report) -> str:
         times = "once" if sm.preemptions == 1 else f"{sm.preemptions:,} times"
         verb = "retracted" if rep.engine.preemption == "retraction" else "preempted"
         logged = (
-            f"{rep.engine.name} logs a warning for each."
+            f"{rep.engine.name} logs each one."
             if rep.engine.logs_preemptions
             else "The server log does not mention this."
         )

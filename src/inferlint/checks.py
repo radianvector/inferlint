@@ -82,7 +82,7 @@ def check_no_preemption(
             ev,
         )
     if n > 0:
-        msg = f"{n:g} {word}s during the run"
+        msg = f"{n:g} {word}{'' if n == 1 else 's'} during the run"
         if engine.logs_preemptions:
             msg += f" ({engine.name} logs a warning for each)"
         return CheckResult("T1", Status.FAIL, msg, {**ev, "preemptions": n})
@@ -94,13 +94,28 @@ def _paused_in_recording(
 ) -> CheckResult:
     """T1 for an engine that exports only a gauge of paused requests, from the recording.
 
-    A pause that starts and ends between two readings is not seen, so a recording alone
-    can show that pauses happened, never that none did. TensorRT-LLM's default scheduler
-    policy, GUARANTEED_NO_EVICT, admits a request only when its whole output fits, so it
-    never pauses one; with that policy in the boot log, no pause seen is a pass.
+    TensorRT-LLM logs each pause at INFO, so its server log, read after the run, counts
+    them. Without it, a recording can show that pauses happened, never that none did: a
+    pause between two readings is not seen, and this engine's gauges move only when a
+    request completes. Its default scheduler policy, GUARANTEED_NO_EVICT, admits a
+    request only when its whole output fits and never pauses one.
     """
     gauge = engine.metrics.paused
     ev: dict[str, object] = {"engine": engine.key, "series": gauge}
+    logged = facts.pauses if facts is not None else None
+    if logged is not None:
+        ev["paused_in_log"] = logged
+        if logged:
+            return CheckResult(
+                "T1",
+                Status.FAIL,
+                f"{logged} request{'' if logged == 1 else 's'} paused for recompute during "
+                f"the run, from the server log ({engine.name} counts none)",
+                {**ev, "preemptions": logged},
+            )
+        return CheckResult(
+            "T1", Status.PASS, "no pause in the server log", {**ev, "preemptions": 0}
+        )
     seen = [s.paused for s in series.samples if s.paused is not None] if series else []
     if not seen:
         return CheckResult(

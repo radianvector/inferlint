@@ -392,6 +392,11 @@ def _collect(
     if st.requested is None and st.bench is not None:
         st.requested = st.bench.max_concurrency
 
+    if st.boot_log is not None and st.facts is not None:
+        # The server log now covers the run too (TensorRT-LLM logs its pauses there).
+        version = st.facts.server_version
+        st.facts = bootlog.parse_file(st.boot_log)
+        st.facts.server_version = version
     say("== checks")
     for r in report.run_checks(
         before=st.before,

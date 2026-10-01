@@ -163,8 +163,9 @@ def _cmd_series(a: argparse.Namespace) -> int:
     s = series.read(a.series)
     results: list[CheckResult] = []
     usable: int | None = None
-    if a.snapshot:
-        r = checks.check_null_block(s, telemetry.load(a.snapshot))
+    snap = telemetry.load(a.snapshot) if a.snapshot else None
+    if snap is not None and checks.engine_of(snap).metrics.cache_info is not None:
+        r = checks.check_null_block(s, snap)
         results.append(r)
         if r.status is Status.PASS:
             inferred = r.evidence.get("inferred_usable_blocks")

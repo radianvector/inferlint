@@ -48,8 +48,13 @@ def test_run_checks() -> None:
     facts = bootlog.parse_file(RUN / "boot.log")
     assert s.engine is engines.TRTLLM
 
-    # No preemption counter. No pause was recorded, and the default scheduler policy
-    # admits a request only when its whole output fits, so it never pauses one.
+    # No preemption counter. The server log, read after the run, has no pause line.
+    assert facts.pauses == 0
+    t1 = checks.check_no_preemption(before, after, s, facts)
+    assert (t1.status, t1.message) == (Status.PASS, "no pause in the server log")
+    # Logged below INFO there would be no pause lines to count; the scheduler policy,
+    # which admits a request only when its whole output fits, still rules pauses out.
+    facts.pauses = None
     t1 = checks.check_no_preemption(before, after, s, facts)
     assert t1.status is Status.PASS and "GUARANTEED_NO_EVICT" in t1.message
     t1 = checks.check_no_preemption(before, after, s)  # without the boot log
@@ -92,3 +97,28 @@ def test_report() -> None:
     assert rep.summary.finished == {"length": 32}
     html = report.render(rep)
     assert "T14 (does not apply to TensorRT-LLM)" in html
+
+
+def test_pauses_are_counted_from_the_log() -> None:
+    """``capacity_scheduler_policy: MAX_UTILIZATION`` and a 20,960-token pool.
+
+    TensorRT-LLM paused 13 requests for recompute and logged each ("request ID N ->
+    pause"). Its paused-requests gauge, which moves only when a request completes, never
+    showed one in 171 readings.
+    """
+    d = RUN.parent / "pauses"
+    facts = bootlog.parse_file(d / "boot.log")
+    assert facts.kv_pool_tokens == 20960 and facts.pauses == 13
+    assert facts.server_args is not None
+    assert facts.server_args["capacity_scheduler_policy"] == "MAX_UTILIZATION"
+    s = series.read(d / "run.series.jsonl")
+    assert {x.paused for x in s.samples} == {0.0}
+    before = telemetry.load(d / "before.snapshot.json")
+    after = telemetry.load(d / "after.snapshot.json")
+    t1 = checks.check_no_preemption(before, after, s, facts)
+    assert t1.status is Status.FAIL
+    assert t1.message == (
+        "13 requests paused for recompute during the run, from the server log "
+        "(TensorRT-LLM counts none)"
+    )
+    assert checks.check_no_preemption(before, after, s).status is Status.UNKNOWN

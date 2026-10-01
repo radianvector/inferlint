@@ -70,6 +70,8 @@ TRTLLM = Engine(
     tested=("1.3",),
     preemption="pause",
     serve="trtllm-serve",
+    # "MaxUtilizationScheduler: request ID N -> pause", at INFO (the default level)
+    logs_preemptions=True,
     # Its stats collector sleeps until a request completes, then logs every step since
     # (1.3.0rc29, serve/openai_server.py), so a reading shows the state as of the last
     # completion. Requests that finish together leave the gauges still until the end.
