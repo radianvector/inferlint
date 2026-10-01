@@ -77,6 +77,29 @@ _READY = "Application startup complete"
 # not failures. A real crash is logged before the shutdown it triggers, so only the lines
 # before the first marker are classified.
 _SHUTDOWN = re.compile(r"\[shutdown\]")
+# Tracebacks a server prints and says it ignores, such as SGLang's optional imports:
+# "Ignore import error when loading ...", then "[start of X traceback]" ...
+# "[end of X traceback]". They are not failures, and they can come before the real one.
+# Work the server did after an error, which shows it survived it: a request answered
+# with 200, or a batch run (SGLang logs one line per prefill and per decode batch).
+_KEPT_SERVING = re.compile(r'"POST /\S+ HTTP/[\d.]+" 200\b|^(?:Prefill|Decode) batch\b')
+_IGNORED_LINE = re.compile(r"^Ignore import error\b")
+_IGNORED_START = re.compile(r"^\[start of .*traceback\]")
+_IGNORED_END = re.compile(r"^\[end of .*traceback\]")
+
+
+def _drop_ignored(lines: list[str]) -> list[str]:
+    """Blank the lines of tracebacks the server says it ignores; line numbers are kept."""
+    out: list[str] = []
+    inside = False
+    for ln in lines:
+        if _IGNORED_START.match(ln):
+            inside = True
+        drop = inside or bool(_IGNORED_LINE.match(ln))
+        if _IGNORED_END.match(ln):
+            inside = False
+        out.append("" if drop else ln)
+    return out
 
 
 @dataclass(frozen=True)
@@ -99,22 +122,66 @@ def shutdown_lineno(text: str) -> int | None:
     return None
 
 
+def _failed_assert(lines: list[str], lineno: int) -> str:
+    """The ``assert`` statement a bare AssertionError came from, from the traceback above.
+
+    A bare ``assert x is not None`` raises an AssertionError with no message, and the error
+    that follows can blame something else entirely (TensorRT-LLM: "Decoding operators failed
+    to load ... incompatibility between PyTorch and TensorRT-LLM" when CUDA_HOME is unset).
+    """
+    for ln in reversed(lines[max(0, lineno - 4) : lineno - 1]):
+        if ln.startswith("assert "):
+            return ln
+    return ""
+
+
+_FRAME = re.compile(r'^File "(?P<file>[^"]+)", line (?P<line>\d+), in (?P<func>\S+)')
+
+
+def _raised_in(lines: list[str], lineno: int) -> str:
+    """Where a generic exception was raised, from the last traceback frame above it.
+
+    "'NoneType' object is not subscriptable" alone names no cause; the function it came
+    from often does (TensorRT-LLM: ``update_quant_config_from_compressed_tensors``).
+    """
+    for ln in reversed(lines[max(0, lineno - 7) : lineno - 1]):
+        m = _FRAME.match(ln)
+        if m:
+            name = m.group("file").replace("\\", "/").rsplit("/", 1)[-1]
+            return f"in {m.group('func')}, {name}:{m.group('line')}"
+    return ""
+
+
 def classify(text: str) -> Failure | None:
     """The most specific failure in a log, or ``None`` if nothing failed.
 
-    Lines after an orderly shutdown began are not considered (see ``_SHUTDOWN``).
+    Lines after an orderly shutdown began are not considered (see ``_SHUTDOWN``), nor are
+    tracebacks the server says it ignores. A server that became ready survived whatever
+    it logged before that, so only the lines after its ready line can hold a failure, and
+    such a failure is one while serving (T7). An error after which the server went on
+    answering requests did not stop it either (SGLang: "post-warmup freeze_gc failed").
     """
     lines = [strip_log_prefix(_ANSI.sub("", raw)).strip() for raw in text.splitlines()]
     stop = shutdown_lineno(text)
     if stop is not None:
         lines = lines[: stop - 1]
+    lines = _drop_ignored(lines)
     ready_at = next((i for i, ln in enumerate(lines, 1) if _READY in ln), None)
     for kind, pat in _RULES:
         for i, ln in enumerate(lines, 1):
+            if ready_at is not None and i <= ready_at:
+                continue
             m = pat.search(ln)
             if m is None:
                 continue
+            if ready_at is not None and any(_KEPT_SERVING.search(x) for x in lines[i:]):
+                continue
             detail = (m.groupdict().get("d") or "").strip()
+            if kind is Kind.ASSERTION and not detail:
+                detail = _failed_assert(lines, i)
+            if kind is Kind.UNCLASSIFIED_EXCEPTION:
+                where = _raised_in(lines, i)
+                detail = f"{detail} ({where})" if where else detail
             phase = Phase.SERVING if ready_at is not None and i > ready_at else Phase.BOOT
             return Failure(kind, phase, i, ln[:300], detail[:200])
     return None

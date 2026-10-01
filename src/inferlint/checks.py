@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from .benchresult import BenchResult
 from .blocks import infer_blocks, predict_concurrency
 from .bootlog import BootFacts
+from .engines import Engine, from_names
 from .failures import Phase, classify
 from .metricnames import VLLM
 from .result import CheckResult, Status
@@ -37,32 +38,93 @@ GENERATION_TOKENS = VLLM.generation_tokens
 CACHE_INFO = VLLM.cache_info
 
 
-def check_no_preemption(before: Snapshot, after: Snapshot) -> CheckResult:
+def engine_of(*snapshots: Snapshot) -> Engine:
+    """The engine that served these snapshots, from their metric names (vLLM if unknown)."""
+    names: set[str] = set()
+    for s in snapshots:
+        names |= s.metrics.names()
+    return from_names(names)
+
+
+def _delta(before: Snapshot, after: Snapshot, engine: Engine, name: str) -> float | None:
+    return counter_delta(before, after, name, witness=engine.witness(name))
+
+
+def check_no_preemption(
+    before: Snapshot, after: Snapshot, series: Series | None = None
+) -> CheckResult:
     """T1. vLLM preempts silently: no log line at the default level, only a counter.
 
     A preempted request loses its computed KV and is recomputed from the start, so a run
     that assumed uninterrupted generation (a long-horizon test, a latency number) is void.
+    SGLang calls it a retraction and logs a warning for each, but the cost is the same.
+    TensorRT-LLM pauses a request for recompute and counts nothing; only the recording
+    (``series``) can show that it happened.
     """
+    engine = engine_of(before, after)
+    word = engine.preemption
+    if engine.metrics.preemptions is None:
+        return _paused_in_recording(engine, series)
+    name = engine.metrics.preemptions
     try:
-        n = counter_delta(before, after, PREEMPTIONS)
+        n = _delta(before, after, engine, name)
     except ServerRestarted as e:
         return CheckResult("T1", Status.FAIL, str(e), {"restarted": True, **e.evidence})
+    ev: dict[str, object] = {"engine": engine.key, "series": name}
     if n is None:
         return CheckResult(
             "T1",
             Status.UNKNOWN,
-            f"{PREEMPTIONS} absent from a snapshot; preemption cannot be ruled out",
-            {"series": PREEMPTIONS},
+            f"{name} absent from a snapshot; {word} cannot be ruled out",
+            ev,
         )
     if n > 0:
+        msg = f"{n:g} {word}s during the run"
+        if engine.logs_preemptions:
+            msg += f" ({engine.name} logs a warning for each)"
+        return CheckResult("T1", Status.FAIL, msg, {**ev, "preemptions": n})
+    return CheckResult("T1", Status.PASS, f"no {word}s", {**ev, "preemptions": 0})
+
+
+def _paused_in_recording(engine: Engine, series: Series | None) -> CheckResult:
+    """T1 for an engine that exports only a gauge of paused requests, from the recording.
+
+    A pause that starts and ends between two readings is not seen, so a recording can
+    show that pauses happened, and a lower bound on them, but never that none did.
+    """
+    gauge = engine.metrics.paused
+    ev: dict[str, object] = {"engine": engine.key, "series": gauge}
+    seen = [s.paused for s in series.samples if s.paused is not None] if series else []
+    if not seen:
         return CheckResult(
-            "T1", Status.FAIL, f"{n:g} preemptions during the run", {"preemptions": n}
+            "T1",
+            Status.UNKNOWN,
+            f"{engine.name} exports no {engine.preemption} count, and there is no recording "
+            "of its paused requests",
+            ev,
         )
-    return CheckResult("T1", Status.PASS, "no preemptions", {"preemptions": 0})
+    busy = [p for p in seen if p > 0]
+    ev |= {"readings": len(seen), "readings_with_paused": len(busy), "paused_max": max(seen)}
+    if busy:
+        return CheckResult(
+            "T1",
+            Status.FAIL,
+            f"requests were paused for recompute in {len(busy)} of {len(seen)} readings, up "
+            f"to {max(busy):g} at once ({engine.name} counts no pauses, so the number is "
+            "unknown)",
+            ev,
+        )
+    return CheckResult(
+        "T1",
+        Status.UNKNOWN,
+        f"no paused request in {len(seen)} readings; {engine.name} counts no pauses, so one "
+        "between readings cannot be ruled out",
+        ev,
+    )
 
 
 def _config_key(f: BootFacts) -> str:
-    return json.dumps(f.non_default_args, sort_keys=True, default=str)
+    return json.dumps([f.engine, f.config_args], sort_keys=True, default=str)
 
 
 def _groups(
@@ -73,7 +135,7 @@ def _groups(
     by_cfg: dict[str, list[tuple[str, BootFacts]]] = {}
     skipped: list[str] = []
     for n, f in zip(names, facts, strict=True):
-        if not f.ready or f.non_default_args is None:
+        if not f.ready or f.config_args is None:
             skipped.append(n)
             continue
         by_cfg.setdefault(_config_key(f), []).append((n, f))
@@ -136,6 +198,13 @@ def check_block_size(facts: BootFacts, default: int = 16) -> CheckResult:
     """
     bs = facts.attention_block_size
     args = facts.non_default_args or {}
+    if bs is None and facts.page_size is not None:
+        return CheckResult(
+            "T5",
+            Status.PASS,
+            f"page size {facts.page_size} token{'s' if facts.page_size != 1 else ''}, as set",
+            {"page_size": facts.page_size},
+        )
     if bs is None:
         if not facts.ready:
             return CheckResult("T5", Status.UNKNOWN, "boot did not get far enough to size blocks")
@@ -213,10 +282,11 @@ def check_backend_honoured(facts: BootFacts) -> CheckResult:
     drafter chooses its own from a candidate list, so a backend known to fail on this
     machine can be in use while the boot log shows the requested one being honoured.
     """
-    if facts.non_default_args is None:
+    if facts.config_args is None:
         return CheckResult(
-            "T6", Status.UNKNOWN, "no non-default args line; cannot tell what was requested"
+            "T6", Status.UNKNOWN, "no arguments line in the log; cannot tell what was requested"
         )
+    server = {"sglang": "SGLang"}.get(facts.engine or "", "vLLM")
     ev: dict[str, object] = {
         "requested": facts.requested_backend,
         "target": facts.selected_backends,
@@ -226,8 +296,8 @@ def check_backend_honoured(facts: BootFacts) -> CheckResult:
     if facts.requested_backend is None:
         chosen = ", ".join(facts.selected_backends) or "one"
         msg = (
-            "nothing to check: the server was started without --attention-backend, so vLLM "
-            f"chose its own ({chosen}) and nothing could be ignored"
+            "nothing to check: the server was started without --attention-backend, so "
+            f"{server} chose its own ({chosen}) and nothing could be ignored"
         )
         if facts.speculative is False:
             msg += "; there was no draft model either"
@@ -321,7 +391,34 @@ def check_concurrency_reached(
             f"; admission control (--max-num-queued-reqs {limit}) kept at most {limit} in "
             f"flight, so the other {requested - limit} were rejected, not queued"
         )
+    run_cap = _running_cap(facts)
+    if run_cap is not None:
+        n, why = run_cap
+        ev["running_cap"] = n
+        if peak >= n and n < requested:  # the cap was reached, so it was the limit
+            msg += f"; {why}"
     return CheckResult("T8", Status.FAIL, msg, ev)
+
+
+def _running_cap(facts: BootFacts | None) -> tuple[int, str] | None:
+    """The most requests the server runs at once by its own setting, and how it was set."""
+    if facts is None:
+        return None
+    if facts.running_cap is not None:  # SGLang prints the limit it settled on
+        n, asked = facts.running_cap, facts.requested_running
+        if asked is not None and n < asked:
+            because = (
+                f" because of the {facts.running_cap_reason}" if facts.running_cap_reason else ""
+            )
+            return n, (
+                f"SGLang lowered its limit to {n} running{because}, although it was started "
+                f"with --max-running-requests {asked}"
+            )
+        return n, f"the server runs at most {n} at once (--max-running-requests {n})"
+    seqs = (facts.non_default_args or {}).get("max_num_seqs")
+    if isinstance(seqs, int):
+        return seqs, f"the server runs at most {seqs} at once (--max-num-seqs {seqs})"
+    return None
 
 
 def concurrency_ceiling(
@@ -336,6 +433,13 @@ def concurrency_ceiling(
     fall evicts requests (T1). A ceiling that moved is reported as a warning, since a
     single "concurrency" figure for such a run describes none of it.
     """
+    # vLLM's gauge is the KV cache; SGLang's is whichever of its pools is fullest, which
+    # for a hybrid model can be the per-request state slots rather than the KV cache.
+    pool = (
+        "the fullest memory pool (KV cache or request state)"
+        if series.engine.key == "sglang"
+        else "the cache"
+    )
     busy = [s for s in series.samples if s.running and s.kv_usage]
     if not busy:
         return CheckResult("T9", Status.UNKNOWN, "no sample with requests running and KV in use")
@@ -374,7 +478,7 @@ def concurrency_ceiling(
         return CheckResult(
             "T9",
             Status.PASS,
-            f"one request holds {held} of the cache; ceiling = floor(1/share) = {lo} "
+            f"one request holds {held} of {pool}; ceiling = floor(1/share) = {lo} "
             f"on every {basis} sample",
             ev,
         )
@@ -382,7 +486,7 @@ def concurrency_ceiling(
         "T9",
         Status.WARN,
         f"ceiling moved between {lo} and {hi} as requests grew (one request held "
-        f"{min(shares):.1%} to {max(shares):.1%} of the cache); concurrency was not a "
+        f"{min(shares):.1%} to {max(shares):.1%} of {pool}); concurrency was not a "
         "constant of this run",
         ev,
     )
@@ -395,10 +499,19 @@ def check_null_block(series: Series, snapshot: Snapshot) -> CheckResult:
     ``num_gpu_blocks`` label the server exports. Doubles as a self-test of
     :func:`infer_blocks`: if either side changes, this goes red.
     """
-    info = snapshot.metrics.info(CACHE_INFO)
+    engine = engine_of(snapshot)
+    cache_info = engine.metrics.cache_info
+    if cache_info is None:
+        return CheckResult(
+            "T14",
+            Status.UNKNOWN,
+            f"{engine.name} exports no block count to check the usage gauge against",
+            {"engine": engine.key},
+        )
+    info = snapshot.metrics.info(cache_info)
     reported_s = None if info is None else info.get("num_gpu_blocks")
     if reported_s is None or not reported_s.isdigit():
-        return CheckResult("T14", Status.UNKNOWN, f"{CACHE_INFO} has no num_gpu_blocks label")
+        return CheckResult("T14", Status.UNKNOWN, f"{cache_info} has no num_gpu_blocks label")
     reported = int(reported_s)
     inf = infer_blocks(series.kv_usages())
     ev: dict[str, object] = {
@@ -440,9 +553,10 @@ def check_client_server_agree(
     ``expected_extra_requests``. Any other difference means other traffic shared the
     server, or the client counted work the server did not do.
     """
+    names = engine_of(before, after).metrics
     try:
-        done = counter_delta(before, after, VLLM.request_success)
-        tokens = counter_delta(before, after, VLLM.generation_tokens)
+        done = counter_delta(before, after, names.request_success)
+        tokens = counter_delta(before, after, names.generation_tokens)
     except ServerRestarted as e:
         return CheckResult("T15", Status.UNKNOWN, str(e), {"restarted": True, **e.evidence})
     ev: dict[str, object] = {
@@ -516,16 +630,16 @@ def with_timer_comparison(r: CheckResult) -> CheckResult:
     )
 
 
-def precise_rate(
-    before: Snapshot, after: Snapshot, counter: str = GENERATION_TOKENS
-) -> CheckResult:
+def precise_rate(before: Snapshot, after: Snapshot, counter: str | None = None) -> CheckResult:
     """T10. Throughput from the snapshots' own float clocks.
 
     Tokens counted between two snapshots divided by the time between those same two
     snapshots. A shell ``$(date +%s)`` difference lands within +-1 s of the truth, which
     on a 30-second run is several percent and does not cancel across the arms of a
-    comparison.
+    comparison. ``counter`` defaults to the engine's generated-token counter.
     """
+    if counter is None:
+        counter = engine_of(before, after).metrics.generation_tokens
     try:
         tokens = counter_delta(before, after, counter)
         span, unc = span_s(before, after)

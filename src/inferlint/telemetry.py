@@ -96,18 +96,42 @@ def load(path: str | Path) -> Snapshot:
     return Snapshot(url=f"file:{p.name}", text=raw, t_wall=float("nan"), t_mono_ns=None)
 
 
+# TensorRT-LLM answers /metrics with JSON iteration statistics and serves Prometheus text
+# at /prometheus/metrics. The path that worked is remembered per server.
+_FALLBACK_PATHS = ("/prometheus/metrics",)
+_found_path: dict[str, str] = {}
+
+
+def _is_json(text: str) -> bool:
+    return text.lstrip()[:1] in ("{", "[")
+
+
 def scrape(
     base_url: str,
     *,
-    path: str = "/metrics",
+    path: str | None = None,
     timeout: float = 10.0,
     fetch: Fetch = _http_get,
     wall: Callable[[], float] = time.time,
     mono_ns: Callable[[], int] = time.monotonic_ns,
 ) -> Snapshot:
-    url = base_url.rstrip("/") + path
+    """Read the server's Prometheus metrics once, with the time of the reading.
+
+    Without ``path``, ``/metrics`` is read; if that is not Prometheus text, the other
+    places servers put it are tried, and the one that works is used from then on.
+    """
+    base = base_url.rstrip("/")
+    url = base + (path or _found_path.get(base, "/metrics"))
     w0, m0 = wall(), mono_ns()
     text = fetch(url, timeout)
+    if path is None and _is_json(text):
+        for alt in _FALLBACK_PATHS:
+            w0, m0 = wall(), mono_ns()
+            alt_text = fetch(base + alt, timeout)
+            if not _is_json(alt_text):
+                url, text = base + alt, alt_text
+                _found_path[base] = alt
+                break
     w1, m1 = wall(), mono_ns()
     return Snapshot(
         url=url,
@@ -167,8 +191,14 @@ def created_changes(a: Snapshot, b: Snapshot) -> list[tuple[str, float, float]]:
     return changed
 
 
-def counter_delta(a: Snapshot, b: Snapshot, name: str, **labels: str) -> float | None:
+def counter_delta(
+    a: Snapshot, b: Snapshot, name: str, *, witness: str | None = None, **labels: str
+) -> float | None:
     """``after - before`` for a counter, ``None`` if either snapshot lacks it.
+
+    Some servers write a labelled counter only when it first counts something. With
+    ``witness``, a series exported from the start alongside it, a snapshot that has the
+    witness but not the counter reads the counter as 0.
 
     Raises :class:`ServerRestarted` if the server was replaced between the snapshots:
     either a ``_created`` stamp moved, or the counter went down.
@@ -181,8 +211,14 @@ def counter_delta(a: Snapshot, b: Snapshot, name: str, **labels: str) -> float |
             f"e.g. {name0}: {old:.3f} -> {new:.3f})",
             {"created_changed": len(moved), "example": name0, "before": old, "after": new},
         )
-    v0 = a.metrics.total(name, **labels)
-    v1 = b.metrics.total(name, **labels)
+
+    def value(s: Snapshot) -> float | None:
+        v = s.metrics.total(name, **labels)
+        if v is None and witness is not None and s.metrics.has(witness):
+            return 0.0
+        return v
+
+    v0, v1 = value(a), value(b)
     if v0 is None or v1 is None:
         return None
     if v1 < v0:

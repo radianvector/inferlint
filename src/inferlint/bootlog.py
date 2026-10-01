@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .engines import by_key, from_log
+
 __all__ = [
     "TESTED_VLLM",
     "BootFacts",
@@ -155,7 +157,53 @@ _FIELDS: tuple[_Field, ...] = (
         [r"(\w+) is not supported with spec-decode .*setting cudagraph_mode=(\w+)"],
         lambda m: (m.group(1), m.group(2)),
     ),
+    # ---- SGLang (verified on 0.5.20)
+    _f("server_args", "server_args={", [r"server_args=(\{.*\})\s*$"], _literal),
+    _f(
+        "sglang_kv_pool",
+        "KV Cache is allocated.",
+        [
+            r"KV Cache is allocated\. dtype: \S+, #tokens: (?P<tok>\d+), "
+            r"K size: (?P<k>[\d.]+) GB, V size: (?P<v>[\d.]+) GB"
+        ],
+        lambda m: (int(m.group("tok")), round(float(m.group("k")) + float(m.group("v")), 2)),
+    ),
+    _f(
+        "model_load",
+        "Load weight end.",
+        [r"Load weight end\. elapsed=(?P<s>[\d.]+) s,.* mem usage=(?P<g>[\d.]+) GB"],
+        lambda m: (_num(m.group("g")), _num(m.group("s"))),
+    ),
+    _f(
+        "sglang_cudagraph_gib",
+        r"CUDA graph end\.",
+        [r"CUDA graph end\. elapsed=[\d.]+ s, mem usage=(?P<g>[\d.]+) GB"],
+        lambda m: _num(m.group("g")),
+        anchor_is_regex=True,
+    ),
+    _f(
+        "sglang_running_cap_reason",
+        "max_running_requests is capped to",
+        [r"max_running_requests is capped to (?P<n>\d+) by the (?P<why>[^(]+?) \("],
+        lambda m: (int(m.group("n")), m.group("why").strip()),
+    ),
+    _f(
+        "sglang_limits",
+        "max_total_num_tokens=",
+        [r"max_total_num_tokens=(?P<tok>\d+),.* max_running_requests=(?P<n>\d+)"],
+        lambda m: (int(m.group("tok")), int(m.group("n"))),
+    ),
+    _f(
+        "sglang_default_backend",
+        "Attention backend not specified.",
+        [r"Attention backend not specified\. Use (?P<b>\w+) backend by default"],
+        lambda m: m.group("b"),
+    ),
 )
+# Values SGLang draws afresh at every start, so not part of a start's configuration.
+_SGLANG_VOLATILE_ARGS = frozenset({"random_seed"})
+# Fields a log prints more than once and that add up (one CUDA graph line per phase).
+_SUMMED = frozenset({"sglang_cudagraph_gib"})
 
 _READY_MARKERS = ("Application startup complete",)
 # Backend selections after this line belong to the speculative-decoding drafter.
@@ -172,8 +220,18 @@ class Unparsed:
 
 @dataclass
 class BootFacts:
+    engine: str | None = None  # "vllm", "sglang"; None when the log does not say
     vllm_version: str | None = None
+    # The version the server reported over HTTP, for engines whose log does not print it.
+    server_version: str | None = None
     non_default_args: dict[str, Any] | None = None
+    server_args: dict[str, Any] | None = None  # SGLang prints every argument
+    page_size: int | None = None  # SGLang's KV allocation unit, in tokens
+    # The most requests the server will run at once, after its own adjustments, and why
+    # it is lower than asked when it is (SGLang: "the mamba state cache").
+    running_cap: int | None = None
+    running_cap_reason: str | None = None
+    requested_running: int | None = None
     requested_backend: str | None = None
     selected_backends: list[str] = field(default_factory=list[str])  # target model
     drafter_backends: list[str] = field(default_factory=list[str])  # speculative drafter
@@ -200,10 +258,29 @@ class BootFacts:
     conflicts: dict[str, list[Any]] = field(default_factory=dict[str, list[Any]])
     lines: int = 0
 
+    @property
+    def version(self) -> str | None:
+        """The engine's version: from the log (vLLM) or from the server (SGLang)."""
+        return self.vllm_version or self.server_version
+
+    @property
+    def config_args(self) -> dict[str, Any] | None:
+        """The arguments that identify a start's configuration, for comparing starts.
+
+        vLLM prints only its non-default arguments; SGLang prints all of them, less the
+        ones it draws afresh at every start.
+        """
+        if self.non_default_args is not None:
+            return self.non_default_args
+        if self.server_args is not None:
+            return {k: v for k, v in self.server_args.items() if k not in _SGLANG_VOLATILE_ARGS}
+        return None
+
     def result_block(self) -> dict[str, Any]:
         """The ``boot`` block of an ``rv.result/1`` document."""
         return {
-            "runtime_version": self.vllm_version,
+            "engine": self.engine,
+            "runtime_version": self.version,
             "kv_pool_tokens": self.kv_pool_tokens,
             "attention_block_size": self.attention_block_size,
             "backend_requested": self.requested_backend,
@@ -232,6 +309,16 @@ def _record(
         facts.kv_pool_tokens, facts.max_concurrency_request_len, facts.max_concurrency = value
     elif name == "model_load":
         facts.model_load_gib, facts.model_load_s = value
+    elif name == "sglang_kv_pool":
+        facts.kv_pool_tokens, facts.available_kv_cache_gib = value
+    elif name == "sglang_cudagraph_gib":
+        facts.cudagraph_actual_gib = round((facts.cudagraph_actual_gib or 0.0) + value, 2)
+    elif name == "sglang_running_cap_reason":
+        facts.running_cap, facts.running_cap_reason = value
+    elif name == "sglang_limits":
+        facts.kv_pool_tokens, facts.running_cap = value
+    elif name == "sglang_default_backend":
+        facts.selected_backends.append(value)
     else:
         setattr(facts, name, value)
 
@@ -272,7 +359,25 @@ def parse(text: str) -> BootFacts:
     facts.lines = lineno
     facts.processes = {k: sorted(v) for k, v in procs.items()}
     # selected_backend legitimately repeats (one line per attention group); not a conflict.
-    facts.conflicts = {k: v for k, v in seen.items() if len(v) > 1 and k != "selected_backend"}
+    facts.conflicts = {
+        k: v for k, v in seen.items() if len(v) > 1 and k != "selected_backend" and k not in _SUMMED
+    }
+    engine = from_log(text)
+    facts.engine = engine.key if engine is not None else None
+
+    if facts.server_args is not None:  # SGLang
+        sa = facts.server_args
+        facts.page_size = sa.get("page_size") if isinstance(sa.get("page_size"), int) else None
+        mrr = sa.get("max_running_requests")
+        facts.requested_running = mrr if isinstance(mrr, int) else None
+        default_backend = "sglang_default_backend" in seen
+        rb = sa.get("attention_backend")
+        facts.requested_backend = None if default_backend or rb is None else str(rb)
+        if not facts.selected_backends and rb is not None:
+            facts.selected_backends.append(str(rb))
+        facts.speculative = sa.get("speculative_algorithm") is not None
+        if facts.cudagraphs is None:
+            facts.cudagraphs = not sa.get("disable_cuda_graph", False)
 
     args = facts.non_default_args or {}
     if facts.non_default_args is not None:
@@ -305,20 +410,20 @@ def labels(paths: Sequence[str | Path]) -> list[str]:
 
 
 def untested_version(facts: BootFacts) -> str | None:
-    """A warning when the log comes from a vLLM release series inferlint was not tested on.
+    """A warning when the log comes from a release series inferlint was not tested on.
 
     Log lines and metric names change between releases. A check that cannot parse says
     Can't tell, but a format that still parses with a different meaning would not, so a
     new version is flagged up front.
     """
-    v = facts.vllm_version
+    v = facts.version
     if v is None:
         return None
-    series = ".".join(v.split(".")[:2])
-    if series in TESTED_VLLM:
+    engine = by_key(facts.engine)
+    if any(v == t or v.startswith(t + ".") for t in engine.tested):
         return None
     return (
-        f"vLLM {v} is not a tested version (tested: {', '.join(TESTED_VLLM)}). If a "
-        "check says Can't tell or a value looks wrong, a log line or metric may have "
+        f"{engine.name} {v} is not a tested version (tested: {', '.join(engine.tested)}). "
+        "If a check says Can't tell or a value looks wrong, a log line or metric may have "
         "changed: please report it."
     )

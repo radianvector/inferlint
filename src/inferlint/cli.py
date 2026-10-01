@@ -65,11 +65,14 @@ def _cmd_boot_facts(a: argparse.Namespace) -> int:
         print(json.dumps(doc, indent=1, default=str))
     else:
         for k, v in doc.items():
-            if k in ("unparsed", "conflicts", "non_default_args") or v in (None, [], {}, ()):
+            skip = ("unparsed", "conflicts", "non_default_args", "server_args")
+            if k in skip or v in (None, [], {}, ()):
                 continue
             print(f"{k:28} {v}")
         if facts.non_default_args:
             print(f"{'non_default_args':28} {sorted(facts.non_default_args)}")
+        if facts.server_args:
+            print(f"{'server_args':28} {len(facts.server_args)} settings (--json lists them)")
         for c, vals in facts.conflicts.items():
             print(f"CONFLICT {c}: {vals}")
         for u in facts.unparsed:
@@ -143,7 +146,8 @@ def _cmd_watch(a: argparse.Namespace) -> int:
 
 
 def _cmd_preemption(a: argparse.Namespace) -> int:
-    r = checks.check_no_preemption(telemetry.load(a.before), telemetry.load(a.after))
+    s = series.read(a.series) if a.series else None
+    r = checks.check_no_preemption(telemetry.load(a.before), telemetry.load(a.after), s)
     return _emit([r], a.json, a.strict)
 
 
@@ -180,7 +184,8 @@ def _needs_linux(what: str, evidence: dict[str, Any] | None = None) -> CheckResu
     return CheckResult(
         "T2",
         Status.UNKNOWN,
-        f"{what} needs Linux: it finds vLLM's processes in /proc. Run it where vLLM runs.",
+        f"{what} needs Linux: it finds the server's processes in /proc. "
+        "Run it where the server runs.",
         evidence or {},
     )
 
@@ -190,15 +195,16 @@ def _cmd_teardown(a: argparse.Namespace) -> int:
         return _emit([_needs_linux("teardown")], a.json, a.strict)
     procs = teardown.list_processes()
     targets = teardown.server_processes(procs)
-    naive = teardown.naive_pkill_matches(procs)
+    pattern = teardown.usual_pkill_pattern(targets)
+    naive = teardown.naive_pkill_matches(procs, pattern)
     for p in targets:
         print(f"target  pid={p.pid:<8} {p.cmdline[:100]}")
     if not targets and not a.json:
-        print("no vLLM server processes found")
+        print("no server processes found (vLLM, SGLang or TensorRT-LLM)")
     missed = [p for p in targets if p not in naive]
     wrong = [p for p in naive if p not in targets]
     if missed or wrong:
-        print(f"(pkill -f 'vllm serve' would miss {len(missed)} and wrongly hit {len(wrong)})")
+        print(f"(pkill -f '{pattern}' would miss {len(missed)} and wrongly hit {len(wrong)})")
     if a.dry_run:
         return 0
     _, res = teardown.teardown(
@@ -388,12 +394,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("preemption", "T1: did the server preempt between two snapshots?")
     p.add_argument("before")
     p.add_argument("after")
+    p.add_argument("--series", help="recording of the run, for engines that count no preemptions")
     p.set_defaults(fn=_cmd_preemption)
 
     p = add("rate", "T10: token throughput from the snapshots' own clocks")
     p.add_argument("before")
     p.add_argument("after")
-    p.add_argument("--counter", default=checks.GENERATION_TOKENS)
+    p.add_argument(
+        "--counter", default=None, help="counter to divide (default: the generated tokens)"
+    )
     p.set_defaults(fn=_cmd_rate)
 
     p = add("series", "T8 T9 T14: concurrency reached, ceiling, block count from a series")

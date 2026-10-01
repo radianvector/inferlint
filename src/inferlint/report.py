@@ -20,7 +20,8 @@ from urllib.parse import quote
 from . import __version__, bootlog, checks
 from .blocks import predict_concurrency
 from .catalog import TRIPWIRES
-from .metricnames import VLLM
+from .engines import VLLM as VLLM_ENGINE
+from .engines import Engine, by_key, from_names
 from .result import CheckResult, Status
 from .series import Series
 from .svgchart import Bar, BarChart, Event, Line, RefLine, TimeChart, render_bars, render_time
@@ -159,10 +160,11 @@ _TERMS = (
     ),
     (
         "Preemption",
-        "When a running request needs a block and none is free, vLLM evicts a running "
-        "request: it frees that request's KV blocks and later recomputes them from the "
-        "prompt and the output so far. vLLM counts it in vllm:num_preemptions_total and "
-        "writes no log line (T1).",
+        "When a running request needs a block and none is free, the server evicts a "
+        "running request: it frees that request's KV blocks and later recomputes them "
+        "from the prompt and the output so far. vLLM counts it in "
+        "vllm:num_preemptions_total and writes no log line; SGLang calls it a retraction, "
+        "counts it in sglang:num_retracted_requests_total and logs a warning (T1).",
     ),
     (
         "Output tokens per second",
@@ -225,6 +227,7 @@ class Summary:
     ended: float | None = None
     boot_s: float | None = None  # first boot log: first stamped line to ready
     finished: dict[str, int] = field(default_factory=dict[str, int])  # by finished_reason
+    finished_total: int | None = None  # when the server does not say why each finished
     output_tokens: int | None = None
     prompt_tokens: int | None = None
     mean_latency_s: float | None = None
@@ -239,7 +242,7 @@ class Summary:
 
     @property
     def done(self) -> int | None:
-        return sum(self.finished.values()) if self.finished else None
+        return sum(self.finished.values()) if self.finished else self.finished_total
 
 
 @dataclass
@@ -257,6 +260,7 @@ class Report:
     generated: str = ""
     summary: Summary = field(default_factory=Summary)
     sources: list[str] = field(default_factory=list[str])
+    engine: Engine = VLLM_ENGINE
 
     def result(self, tripwire: str) -> CheckResult | None:
         return next((r for r in self.results if r.tripwire == tripwire), None)
@@ -272,12 +276,14 @@ def build(
     title: str | None = None,
     sources: Sequence[str] = (),
     extra: Sequence[CheckResult] = (),
+    server_version: str | None = None,
 ) -> Report:
     """Run every tripwire the given files allow and collect the results.
 
     ``sources`` names the input files, for the report's "Made from" line. ``extra`` adds
     results the files cannot give, from a live run: the probe (T7), the teardown (T2) and
-    the client/server comparison (T15).
+    the client/server comparison (T15). ``server_version`` is the version the live
+    server reported, for engines whose boot log does not print it.
     """
     results: list[CheckResult] = []
     boots: list[tuple[str, bootlog.BootFacts]] = []
@@ -288,6 +294,8 @@ def build(
         facts = bootlog.parse(text)
         if not boots:
             boot_s = _boot_seconds(text, facts.ready_lineno)
+            if facts.vllm_version is None:
+                facts.server_version = server_version
         boots.append((name, facts))
         for r in (
             checks.check_boot_failure(text),
@@ -317,10 +325,12 @@ def build(
     inferred = t14.evidence.get("inferred_usable_blocks") if t14 else None
     usable = inferred if t14 and t14.status is Status.PASS and isinstance(inferred, int) else None
     now = _dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z").strip()
-    summary = _summarize(before, after, series)
+    engine = _engine(before, after, series, boots)
+    summary = _summarize(before, after, series, engine)
     summary.boot_s = boot_s
     return Report(
-        title=title or _default_title(boots),
+        engine=engine,
+        title=title or _default_title(boots, engine),
         results=results,
         boots=boots,
         series=series,
@@ -334,6 +344,26 @@ def build(
     )
 
 
+def _engine(
+    before: Snapshot | None,
+    after: Snapshot | None,
+    series: Series | None,
+    boots: Sequence[tuple[str, bootlog.BootFacts]],
+) -> Engine:
+    """Which engine the run's files come from: the snapshots, the recording, the boot log."""
+    snaps = [s for s in (before, after) if s is not None]
+    if snaps:
+        names: set[str] = set()
+        for s in snaps:
+            names |= s.metrics.names()
+        return from_names(names)
+    if series is not None and isinstance(series.header.get("engine"), str):
+        return series.engine
+    if boots and boots[0][1].engine:
+        return by_key(boots[0][1].engine)
+    return VLLM_ENGINE
+
+
 def run_checks(
     *,
     before: Snapshot | None,
@@ -342,15 +372,18 @@ def run_checks(
     requested: int | None,
     facts: bootlog.BootFacts | None = None,
 ) -> list[CheckResult]:
-    """The tripwires a run's readings and recording allow: T1, T10, T14, T9, T8."""
+    """The tripwires a run's readings and recording allow: T1, T10, T14, T9, T8.
+
+    T14 needs a block count from the server; engines that export none skip it.
+    """
     results: list[CheckResult] = []
     if before is not None and after is not None:
-        results.append(checks.check_no_preemption(before, after))
+        results.append(checks.check_no_preemption(before, after, series))
         results.append(checks.precise_rate(before, after))
     if series is None:
         return results
     usable: int | None = None
-    if after is not None:
+    if after is not None and checks.engine_of(after).metrics.cache_info is not None:
         t14 = checks.check_null_block(series, after)
         results.append(t14)
         inferred = t14.evidence.get("inferred_usable_blocks")
@@ -362,7 +395,13 @@ def run_checks(
     return results
 
 
-def _summarize(before: Snapshot | None, after: Snapshot | None, s: Series | None) -> Summary:
+def _summarize(
+    before: Snapshot | None,
+    after: Snapshot | None,
+    s: Series | None,
+    engine: Engine = VLLM_ENGINE,
+) -> Summary:
+    names = engine.metrics
     sm = Summary()
     if s is not None and s.samples:
         peak = s.peak_running()
@@ -381,19 +420,27 @@ def _summarize(before: Snapshot | None, after: Snapshot | None, s: Series | None
     with contextlib.suppress(ValueError):  # no clock, or the clocks disagree: no span
         sm.span_s = span_s(before, after)[0]
     try:
-        for reason in _REASONS:
-            n = counter_delta(before, after, VLLM.request_success, finished_reason=reason)
-            if n is not None:
-                sm.finished[reason] = int(n)
-        out = counter_delta(before, after, VLLM.generation_tokens)
+        label = names.finished_reason_label
+        if label is not None:
+            for reason in _REASONS:
+                n = counter_delta(before, after, names.request_success, **{label: reason})
+                if n is not None:
+                    sm.finished[reason] = int(n)
+        else:
+            n = counter_delta(before, after, names.request_success)
+            sm.finished_total = None if n is None else int(n)
+        out = counter_delta(before, after, names.generation_tokens)
         sm.output_tokens = None if out is None else int(out)
-        prompt = counter_delta(before, after, VLLM.prompt_tokens)
+        prompt = counter_delta(before, after, names.prompt_tokens)
         sm.prompt_tokens = None if prompt is None else int(prompt)
-        pre = counter_delta(before, after, VLLM.preemptions)
-        sm.preemptions = None if pre is None else int(pre)
-        sm.mean_latency_s = _mean(before, after, VLLM.e2e_latency)
-        sm.mean_first_token_s = _mean(before, after, VLLM.first_token)
-        sm.mean_queue_s = _mean(before, after, VLLM.queue_time)
+        if names.preemptions is not None:
+            pre = counter_delta(
+                before, after, names.preemptions, witness=engine.witness(names.preemptions)
+            )
+            sm.preemptions = None if pre is None else int(pre)
+        sm.mean_latency_s = _mean(before, after, names.e2e_latency)
+        sm.mean_first_token_s = _mean(before, after, names.first_token)
+        sm.mean_queue_s = _mean(before, after, names.queue_time)
     except ServerRestarted:
         sm = Summary(
             peak_running=sm.peak_running,
@@ -446,10 +493,12 @@ def _prefixed(r: CheckResult, name: str) -> CheckResult:
     return CheckResult(r.tripwire, r.status, f"{name}: {r.message}", r.evidence)
 
 
-def _default_title(boots: Sequence[tuple[str, bootlog.BootFacts]]) -> str:
+def _default_title(
+    boots: Sequence[tuple[str, bootlog.BootFacts]], engine: Engine = VLLM_ENGINE
+) -> str:
     if boots:
-        v = boots[0][1].vllm_version
-        return f"vLLM {v} run" if v else "vLLM run"
+        v = boots[0][1].version
+        return f"{engine.name} {v} run" if v else f"{engine.name} run"
     return "Tripwire report"
 
 
@@ -670,6 +719,8 @@ def _clock(start: float, end: float) -> str:
 
 def _finished(sm: Summary) -> str:
     done = sm.done or 0
+    if not sm.finished:  # the server counts finished requests without saying why
+        return f"{done:,}"
     parts = [f"{n:,} {_REASONS[k]}" for k, n in sm.finished.items() if n and k != "error"]
     errors = sm.finished.get("error", 0)
     parts.append(f"{errors:,} {_REASONS['error']}" if errors else "no errors")
@@ -693,10 +744,16 @@ def _story(rep: Report) -> str:
     if sm.done is not None and sm.output_tokens is not None:
         errors = sm.finished.get("error", 0)
         how = "with no errors" if not errors else f"({errors:,} of them with an error)"
-        out.append(
-            f"The server finished {sm.done:,} requests {how} and generated "
-            f"{sm.output_tokens:,} tokens."
-        )
+        if not sm.finished:  # no finish reasons: say nothing about errors
+            out.append(
+                f"The server finished {sm.done:,} requests and generated "
+                f"{sm.output_tokens:,} tokens."
+            )
+        else:
+            out.append(
+                f"The server finished {sm.done:,} requests {how} and generated "
+                f"{sm.output_tokens:,} tokens."
+            )
     if sm.peak_running is not None and rep.requested and sm.peak_running < rep.requested:
         wait = (
             f", {sm.mean_queue_s:.0f} s on average before a request started"
@@ -709,10 +766,15 @@ def _story(rep: Report) -> str:
         )
     if sm.preemptions:
         times = "once" if sm.preemptions == 1 else f"{sm.preemptions:,} times"
+        verb = "retracted" if rep.engine.preemption == "retraction" else "preempted"
+        logged = (
+            f"{rep.engine.name} logs a warning for each."
+            if rep.engine.logs_preemptions
+            else "The server log does not mention this."
+        )
         out.append(
-            f"It preempted a running request {times} to free KV cache: each one went back "
-            "to the queue and later recomputed its prompt and output so far. The server log "
-            "does not mention this."
+            f"It {verb} a running request {times} to free KV cache: each one went back "
+            f"to the queue and later recomputed its prompt and output so far. {logged}"
         )
     return " ".join(out)
 
@@ -729,12 +791,18 @@ def _checked(rep: Report) -> tuple[str, str]:
     missing: dict[str, list[str]] = {}
     for t in TRIPWIRES:
         if t not in ran:
-            missing.setdefault(_NEEDS.get(t, "need other input"), []).append(t)
+            why = _NEEDS.get(t, "need other input")
+            if t == "T14" and rep.engine.metrics.cache_info is None:
+                why = f"do not apply to {rep.engine.name}"
+            missing.setdefault(why, []).append(t)
     groups: list[str] = []
     for why, ids in missing.items():
         if len(ids) == 1:
             verb, _, rest = why.partition(" ")
-            why = f"{verb}s {rest}" if verb in ("need", "run") else why
+            if verb in ("need", "run"):
+                why = f"{verb}s {rest}"
+            elif verb == "do":
+                why = f"does {rest}"
         names = ids[0] if len(ids) == 1 else ", ".join(ids[:-1]) + " and " + ids[-1]
         groups.append(f"{names} ({why})")
     text = f"{len(ran)} of {len(TRIPWIRES)}"
@@ -1037,22 +1105,57 @@ def _pools_chart(rep: Report) -> str:
     )
 
 
+# SGLang prints all ~500 of its settings; these are the ones that change what is measured.
+_SGLANG_SETTINGS = (
+    "attention_backend",
+    "chunked_prefill_size",
+    "context_length",
+    "disable_cuda_graph",
+    "disable_radix_cache",
+    "kv_cache_dtype",
+    "mamba_full_memory_ratio",
+    "max_mamba_cache_size",
+    "max_queued_requests",
+    "max_running_requests",
+    "max_total_tokens",
+    "mem_fraction_static",
+    "page_size",
+    "schedule_policy",
+    "speculative_algorithm",
+)
+
+
+def _settings(f: bootlog.BootFacts) -> dict[str, object]:
+    """The start's settings worth showing: vLLM's non-default ones, SGLang's main ones."""
+    if f.non_default_args is not None:
+        return {k: v for k, v in f.non_default_args.items() if k not in ("model", "model_tag")}
+    sa = f.server_args or {}
+    return {k: sa[k] for k in _SGLANG_SETTINGS if k in sa}
+
+
+def _model_name(f: bootlog.BootFacts) -> str:
+    """The model's folder or repository name, from the start's arguments."""
+    args = f.config_args or {}
+    path = args.get("model", args.get("model_path", ""))
+    return str(path or "").rstrip("/").split("/")[-1]
+
+
 def _boot_table(rep: Report) -> str:
     if not rep.boots:
         return ""
     name, f = rep.boots[0]
-    args = f.non_default_args or {}
-    model = str(args.get("model", "")).rstrip("/").split("/")[-1] or _DASH
+    model = _model_name(f) or _DASH
+    if f.page_size is not None:
+        block = f"{f.page_size:,} token{'s' if f.page_size != 1 else ''} (page size)"
+    elif f.attention_block_size:
+        block = f"{f.attention_block_size:,} tokens"
+    else:
+        block = "16 tokens (default)"
     items = [
-        ("vLLM", f.vllm_version or _DASH),
+        (rep.engine.name, f.version or _DASH),
         ("Model", model),
         ("KV pool", f"{f.kv_pool_tokens:,} tokens" if f.kv_pool_tokens else _DASH),
-        (
-            "Attention block",
-            f"{f.attention_block_size:,} tokens"
-            if f.attention_block_size
-            else "16 tokens (default)",
-        ),
+        ("Attention block", block),
         ("Attention backend", ", ".join(f.selected_backends) or _DASH),
         ("Draft model backend", ", ".join(f.drafter_backends) or "none"),
         (
@@ -1081,10 +1184,7 @@ def _boot_table(rep: Report) -> str:
         ),
         (
             "Server settings",
-            ", ".join(
-                f"{k}={v}" for k, v in sorted(args.items()) if k not in ("model", "model_tag")
-            )
-            or _DASH,
+            ", ".join(f"{k}={v}" for k, v in sorted(_settings(f).items())) or _DASH,
         ),
     ]
     dl = "".join(f"<dt>{escape(k)}</dt><dd>{escape(v)}</dd>" for k, v in items)
@@ -1122,9 +1222,9 @@ def render(rep: Report, *, standalone: bool = True) -> str:
     boot = rep.boots[0][1] if rep.boots else None
     meta: list[str] = []
     if boot is not None:
-        args = boot.non_default_args or {}
-        model = str(args.get("model", "")).rstrip("/").split("/")[-1]
-        meta += [x for x in (f"vLLM {boot.vllm_version}" if boot.vllm_version else "", model) if x]
+        model = _model_name(boot)
+        engine = f"{rep.engine.name} {boot.version}" if boot.version else rep.engine.name
+        meta += [x for x in (engine, model) if x]
         if boot.kv_pool_tokens:
             meta.append(f"{boot.kv_pool_tokens:,}-token KV pool")
     if rep.requested:

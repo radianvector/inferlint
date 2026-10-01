@@ -19,7 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, cast
 
-from .metricnames import VLLM
+from .engines import Engine, by_key, from_names
+from .metricnames import VLLM, MetricNames
 from .prom import Metrics
 from .telemetry import Snapshot, scrape
 
@@ -29,6 +30,7 @@ __all__ = [
     "Sample",
     "Series",
     "from_samples",
+    "gauges",
     "read",
     "sample_row",
     "watch",
@@ -36,15 +38,22 @@ __all__ = [
 
 SCHEMA = "inferlint.series/1"
 
-# Output field -> vLLM series. Absent series are written as null, never 0.
-VLLM_GAUGES: dict[str, str] = {
-    "running": VLLM.running,
-    "waiting": VLLM.waiting,
-    "kv_usage": VLLM.kv_usage,
-    "preemptions": VLLM.preemptions,
-    "generation_tokens": VLLM.generation_tokens,
-    "prompt_tokens": VLLM.prompt_tokens,
-}
+
+def gauges(names: MetricNames) -> dict[str, str]:
+    """Output field -> series. Absent series are written as null, never 0."""
+    out = {
+        "running": names.running,
+        "waiting": names.waiting,
+        "kv_usage": names.kv_usage,
+        "preemptions": names.preemptions,
+        "generation_tokens": names.generation_tokens,
+        "prompt_tokens": names.prompt_tokens,
+        "paused": names.paused,
+    }
+    return {k: v for k, v in out.items() if v is not None}
+
+
+VLLM_GAUGES: dict[str, str] = gauges(VLLM)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +66,7 @@ class Sample:
     preemptions: float | None = None
     generation_tokens: float | None = None
     prompt_tokens: float | None = None
+    paused: float | None = None  # requests paused for recompute (TensorRT-LLM)
 
 
 @dataclass(frozen=True)
@@ -64,6 +74,12 @@ class Series:
     header: dict[str, Any]
     samples: tuple[Sample, ...]
     skipped_lines: int = 0
+
+    @property
+    def engine(self) -> Engine:
+        """The engine the recording came from (named in its header; vLLM if not)."""
+        key = self.header.get("engine")
+        return by_key(key if isinstance(key, str) else None)
 
     def busy(self) -> tuple[Sample, ...]:
         return tuple(s for s in self.samples if s.running)
@@ -76,10 +92,18 @@ class Series:
         return [s.kv_usage for s in self.samples if s.kv_usage]
 
 
-def sample_row(m: Metrics, t_wall: float, t_mono_ns: int | None) -> dict[str, Any]:
+def sample_row(
+    m: Metrics, t_wall: float, t_mono_ns: int | None, engine: Engine | None = None
+) -> dict[str, Any]:
+    """One sample, with the series of ``engine`` (by default, the one ``m`` comes from)."""
+    engine = engine or from_names(m.names())
     row: dict[str, Any] = {"t_wall": round(t_wall, 6), "t_mono_ns": t_mono_ns}
-    for key, series in VLLM_GAUGES.items():
-        row[key] = m.single(series) if key == "kv_usage" else m.total(series)
+    for key, series in gauges(engine.metrics).items():
+        v = m.single(series) if key == "kv_usage" else m.total(series)
+        witness = engine.witness(series)
+        if v is None and witness is not None and m.has(witness):
+            v = 0.0  # a counter the engine writes only once it first counts
+        row[key] = v
     return row
 
 
@@ -98,6 +122,7 @@ def _row_to_sample(row: dict[str, Any]) -> Sample:
         preemptions=f("preemptions"),
         generation_tokens=f("generation_tokens"),
         prompt_tokens=f("prompt_tokens"),
+        paused=f("paused"),
     )
 
 
@@ -150,9 +175,12 @@ def watch(
     a gap in the series, and a zero would be a false reading of an idle server.
     """
     stop = stop or threading.Event()
-    out.write(json.dumps({"schema": SCHEMA, "url": base_url, "interval_s": interval}) + "\n")
+    header: dict[str, Any] = {"schema": SCHEMA, "url": base_url, "interval_s": interval}
+    # The header names the engine, which the first scrape tells; it goes first regardless.
+    wrote_header = False
     t_end = None if duration is None else time.monotonic() + duration
     n = 0
+    engine: Engine | None = None
     while not stop.is_set() and (t_end is None or time.monotonic() < t_end):
         try:
             snap = scrape_fn(base_url)
@@ -160,8 +188,17 @@ def watch(
             if on_error is not None:
                 on_error(e)
         else:
-            out.write(json.dumps(sample_row(snap.metrics, snap.t_wall, snap.t_mono_ns)) + "\n")
+            m = snap.metrics
+            if engine is None:  # one server: decided once
+                engine = from_names(m.names())
+                header["engine"] = engine.key
+            if not wrote_header:
+                out.write(json.dumps(header) + "\n")
+                wrote_header = True
+            out.write(json.dumps(sample_row(m, snap.t_wall, snap.t_mono_ns, engine)) + "\n")
             out.flush()
             n += 1
         sleep(interval)
+    if not wrote_header:  # no scrape succeeded: the file still says what it is
+        out.write(json.dumps(header) + "\n")
     return n

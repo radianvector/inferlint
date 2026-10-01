@@ -1,11 +1,12 @@
-"""Stop a vLLM server completely, and prove the GPU is free before the next boot.
+"""Stop a vLLM or SGLang server completely, and prove the GPU is free before the next boot.
 
 Two traps, both of which produce numbers rather than errors:
 
 * ``pkill -f "vllm serve"`` signals the API server and misses the engine. vLLM renames
   its engine child to ``VLLM::EngineCore``, which no longer contains ``vllm serve``. The
   engine keeps its weights and KV cache resident, the next boot loads a second copy on
-  top of it, and the benchmark runs on whatever memory is left.
+  top of it, and the benchmark runs on whatever memory is left. SGLang renames its
+  children the same way (``sglang::scheduler``, ``sglang::detokenizer``).
 * The same pattern run from ``bash -c '... pkill -f "vllm serve" ...'`` matches the
   shell's own command line and kills the shell.
 
@@ -14,7 +15,7 @@ the caller and its ancestors are never candidates, and the card counts as free o
 *consecutive* low readings with no server process alive. A crashing engine can read low
 for a moment part-way through its own teardown.
 
-Process discovery reads ``/proc`` and is Linux-only (vLLM is too). GPU memory is read with
+Process discovery reads ``/proc`` and is Linux-only (the servers are too). GPU memory is read with
 ``nvidia-smi``; both are injectable for tests.
 """
 
@@ -38,8 +39,10 @@ __all__ = [
     "list_processes",
     "naive_pkill_matches",
     "read_gpu_used_mib",
+    "server_engine",
     "server_processes",
     "teardown",
+    "usual_pkill_pattern",
     "wait_clear",
 ]
 
@@ -88,27 +91,56 @@ def list_processes(proc_root: str | Path = "/proc") -> list[Proc]:
     return out
 
 
-_ENTRYPOINT_MODULES = ("vllm.entrypoints.openai.api_server", "vllm.entrypoints.cli.main")
+# Per engine: the prefix its renamed children carry, its CLI, and its server modules.
+# vLLM's engine renames itself VLLM::EngineCore; SGLang's scheduler and detokenizer
+# become sglang::scheduler and sglang::detokenizer.
+_RENAMED = {"VLLM::": "vllm", "sglang::": "sglang"}
+# CLI name -> engine; each is followed by a "serve" subcommand.
+_CLIS = {"vllm": "vllm", "sglang": "sglang", "trtllm-serve": "trtllm"}
+_ENTRYPOINT_MODULES = {
+    "vllm.entrypoints.openai.api_server": "vllm",
+    "vllm.entrypoints.cli.main": "vllm",
+    "sglang.launch_server": "sglang",
+}
 
 
-def is_server_process(p: Proc) -> bool:
-    """True for a vLLM API server or any renamed vLLM child (``VLLM::...``)."""
-    if p.comm.startswith("VLLM::") or (p.argv and p.argv[0].startswith("VLLM::")):
-        return True
+def server_engine(p: Proc) -> str | None:
+    """Which engine's server process this is ("vllm", "sglang", "trtllm"), or None."""
+    for prefix, engine in _RENAMED.items():
+        if p.comm.startswith(prefix) or (p.argv and p.argv[0].startswith(prefix)):
+            return engine
     argv = p.argv
     if not argv:
-        return False
-    # `vllm serve ...` or `python /path/to/bin/vllm serve ...`
+        return None
+    # `vllm serve ...`, `sglang serve ...`, `trtllm-serve serve ...`, or the same run
+    # as `python /path/to/bin/vllm serve ...`
     for i in (0, 1):
-        is_serve = i + 1 < len(argv) and Path(argv[i]).name == "vllm" and argv[i + 1] == "serve"
-        if is_serve and (i == 0 or Path(argv[0]).name.startswith("python")):
-            return True
-    # `python -m vllm.entrypoints...`
+        if i + 1 >= len(argv) or argv[i + 1] != "serve":
+            continue
+        name = Path(argv[i]).name
+        if name in _CLIS and (i == 0 or Path(argv[0]).name.startswith("python")):
+            return _CLIS[name]
+    # `python -m vllm.entrypoints...`, `python -m sglang.launch_server`
     if Path(argv[0]).name.startswith("python"):
         for i, a in enumerate(argv[:-1]):
             if a == "-m" and argv[i + 1] in _ENTRYPOINT_MODULES:
-                return True
-    return False
+                return _ENTRYPOINT_MODULES[argv[i + 1]]
+    return None
+
+
+def is_server_process(p: Proc) -> bool:
+    """True for a vLLM, SGLang or TensorRT-LLM server, including renamed children."""
+    return server_engine(p) is not None
+
+
+def usual_pkill_pattern(targets: Sequence[Proc]) -> str:
+    """The ``pkill -f`` pattern people use for the server these processes belong to."""
+    if any(server_engine(p) == "trtllm" for p in targets):
+        return "trtllm-serve"
+    if any(server_engine(p) == "sglang" for p in targets):
+        launched_as_module = any("sglang.launch_server" in p.argv for p in targets)
+        return "sglang.launch_server" if launched_as_module else "sglang serve"
+    return "vllm serve"
 
 
 def _ancestors(pid: int, procs: Sequence[Proc]) -> set[int]:
@@ -122,7 +154,7 @@ def _ancestors(pid: int, procs: Sequence[Proc]) -> set[int]:
 
 
 def server_processes(procs: Sequence[Proc], self_pid: int | None = None) -> list[Proc]:
-    """vLLM processes, never including ``self_pid`` or any of its ancestors."""
+    """Server processes, never including ``self_pid`` or any of its ancestors."""
     me = os.getpid() if self_pid is None else self_pid
     protected = _ancestors(me, procs)
     return [p for p in procs if p.pid not in protected and is_server_process(p)]
@@ -228,7 +260,7 @@ def teardown(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> tuple[list[Proc], ClearResult]:
-    """SIGTERM every vLLM process, SIGKILL survivors after ``grace_s``, then wait for clear."""
+    """SIGTERM every server process, SIGKILL survivors after ``grace_s``, then wait for clear."""
     targets = server_processes(list_procs(), self_pid)
 
     def live() -> int:

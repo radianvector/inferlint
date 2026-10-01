@@ -32,6 +32,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
 from pathlib import Path
+from typing import cast
 
 from . import benchresult, bootlog, checks, report, series, teardown, telemetry
 from .probe import probe
@@ -44,6 +45,7 @@ __all__ = [
     "load_concurrency",
     "prepare_load",
     "run",
+    "server_version",
     "untimed_requests",
 ]
 
@@ -186,6 +188,22 @@ def _healthy(url: str, timeout: float = 5.0) -> bool:
         return False
 
 
+def server_version(url: str, timeout: float = 5.0) -> str | None:
+    """The version the server reports: vLLM and TensorRT-LLM on ``/version``, SGLang on
+    ``/get_server_info``."""
+    for path in ("/version", "/get_server_info"):
+        try:
+            with urllib.request.urlopen(url.rstrip("/") + path, timeout=timeout) as r:
+                doc: object = json.loads(r.read().decode("utf-8", "replace"))
+        except (urllib.error.URLError, OSError, ValueError):
+            continue
+        if isinstance(doc, dict):
+            v = cast(dict[str, object], doc).get("version")
+            if isinstance(v, str) and v:
+                return v
+    return None
+
+
 def _start_server(cmd: str, log: Path) -> subprocess.Popen[bytes]:
     with log.open("wb") as fh:
         # A session of its own, so the whole server (API process and engine) can be
@@ -325,6 +343,8 @@ def _collect(
     if st.boot_log is not None:
         say("== boot log")
         st.facts = bootlog.parse_file(st.boot_log)
+        if st.facts.vllm_version is None:  # SGLang does not print its version
+            st.facts.server_version = server_version(plan.url)
         note = bootlog.untested_version(st.facts)
         if note:
             say(f"note: {note}")
@@ -407,6 +427,7 @@ def _report(plan: Plan, o: Outcome, st: _Run) -> report.Report:
         title=plan.title,
         sources=st.files,
         extra=[r for r in o.results if r.tripwire in ("T2", "T7", "T15")],
+        server_version=st.facts.server_version if st.facts is not None else None,
     )
 
 
