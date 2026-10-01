@@ -3,13 +3,14 @@
 Each engine has its own metric names, process names and log format. Everything that
 depends on them asks this module, so the checks themselves are written once. A file whose
 engine cannot be told is read as vLLM's, which is what inferlint read before it knew any
-other engine.
+other engine, unless the user named the engine (``--engine`` or ``INFERLINT_ENGINE``).
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+import shlex
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from .metricnames import SGLANG as SGLANG_METRICS
@@ -17,7 +18,23 @@ from .metricnames import TRTLLM as TRTLLM_METRICS
 from .metricnames import VLLM as VLLM_METRICS
 from .metricnames import MetricNames
 
-__all__ = ["ENGINES", "SGLANG", "TRTLLM", "VLLM", "Engine", "by_key", "from_log", "from_names"]
+__all__ = [
+    "ENGINES",
+    "ENV_VAR",
+    "SGLANG",
+    "TRTLLM",
+    "VLLM",
+    "Engine",
+    "by_key",
+    "from_command",
+    "from_log",
+    "from_names",
+    "named_by",
+    "parse_key",
+]
+
+# Names the engine for every command, for a team that always runs the same one.
+ENV_VAR = "INFERLINT_ENGINE"
 
 
 @dataclass(frozen=True)
@@ -35,6 +52,8 @@ class Engine:
     logs_preemptions: bool = False  # does it write a log line when it preempts?
     # Are its gauges updated only when a request completes, not at every step?
     gauges_lag: bool = False
+    # What to change when the server serves no Prometheus metrics.
+    metrics_hint: str = ""
 
     def witness(self, counter: str) -> str | None:
         return dict(self.witnesses).get(counter)
@@ -48,6 +67,8 @@ VLLM = Engine(
     tested=("0.28", "0.29", "0.30"),
     preemption="preemption",
     serve="vllm serve",
+    metrics_hint="vLLM serves them at /metrics without a flag; check that the address is "
+    "the server's",
 )
 SGLANG = Engine(
     key="sglang",
@@ -61,6 +82,7 @@ SGLANG = Engine(
     witnesses=(("sglang:num_retracted_requests_total", "sglang:num_retracted_reqs"),),
     # "KV cache pool is full. Retract requests. #retracted_reqs: N" (WARNING)
     logs_preemptions=True,
+    metrics_hint="start SGLang with --enable-metrics",
 )
 TRTLLM = Engine(
     key="trtllm",
@@ -76,6 +98,8 @@ TRTLLM = Engine(
     # (1.3.0rc29, serve/openai_server.py), so a reading shows the state as of the last
     # completion. Requests that finish together leave the gauges still until the end.
     gauges_lag=True,
+    metrics_hint="put 'return_perf_metrics: true' in the YAML file given to trtllm-serve "
+    "--config; it then serves them at /prometheus/metrics",
 )
 ENGINES: tuple[Engine, ...] = (VLLM, SGLANG, TRTLLM)
 
@@ -98,15 +122,58 @@ def by_key(key: str | None) -> Engine:
     return next((e for e in ENGINES if e.key == key), VLLM)
 
 
-def from_names(names: Iterable[str]) -> Engine:
-    """The engine whose metric prefix most series carry; vLLM when none does."""
+def parse_key(value: str) -> Engine | None:
+    """The engine a user named: its key or its name, in any case ("trtllm", "TensorRT-LLM")."""
+    v = value.strip().lower()
+    return next((e for e in ENGINES if v in (e.key, e.name.lower())), None)
+
+
+def named_by(names: Iterable[str]) -> Engine | None:
+    """The engine whose metric prefix most series carry; None when no series has one."""
     counts = {e.key: 0 for e in ENGINES}
     for n in names:
         for e in ENGINES:
             if n.startswith(e.prefix):
                 counts[e.key] += 1
     best = max(ENGINES, key=lambda e: counts[e.key])
-    return best if counts[best.key] else VLLM
+    return best if counts[best.key] else None
+
+
+def from_names(names: Iterable[str]) -> Engine:
+    """The engine whose metric prefix most series carry; vLLM when none does."""
+    return named_by(names) or VLLM
+
+
+# `vllm serve`, `sglang serve`: a CLI followed by its "serve" subcommand.
+_SERVE_CLIS = {"vllm": VLLM, "sglang": SGLANG}
+# `python -m vllm.entrypoints.openai.api_server`, `python -m sglang.launch_server`
+_MODULES = (("vllm", VLLM), ("sglang", SGLANG), ("tensorrt_llm", TRTLLM))
+
+
+def from_command(cmd: str | Sequence[str] | None) -> Engine | None:
+    """The engine a server command starts; None if it names none.
+
+    Reads ``vllm serve``, ``sglang serve``, ``trtllm-serve``, and ``python -m`` with one of
+    their modules, also behind a path or a prefix such as ``env X=1``.
+    """
+    if not cmd:
+        return None
+    try:
+        argv = shlex.split(cmd) if isinstance(cmd, str) else list(cmd)
+    except ValueError:  # unbalanced quotes
+        return None
+    for i, tok in enumerate(argv):
+        name = tok.replace("\\", "/").rsplit("/", 1)[-1]
+        nxt = argv[i + 1] if i + 1 < len(argv) else ""
+        if name == "trtllm-serve":
+            return TRTLLM
+        if name in _SERVE_CLIS and nxt == "serve":
+            return _SERVE_CLIS[name]
+        if tok == "-m":
+            for module, engine in _MODULES:
+                if nxt == module or nxt.startswith(module + "."):
+                    return engine
+    return None
 
 
 def from_log(text: str) -> Engine | None:

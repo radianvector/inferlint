@@ -4,6 +4,8 @@ It does in order what the separate commands do one at a time:
 
 1. With ``serve``: check the GPU is free (T2), start the server with its output saved to
    ``boot.log``, and wait until it is ready. Without it, attach to a running server.
+   Either way, check that the server serves the named engine's metrics (``engine``, else
+   the engine the ``serve`` command starts, else whichever it serves).
 2. Check the boot log (T5, T6, T7, T12) and send real requests (T7).
 3. Read the server's counters, record its gauges while the load command runs, and read
    the counters again.
@@ -34,7 +36,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import cast
 
-from . import benchresult, bootlog, checks, report, series, teardown, telemetry
+from . import benchresult, bootlog, checks, engines, report, series, teardown, telemetry
 from .probe import probe
 from .result import LABELS, CheckResult, Status
 
@@ -69,6 +71,7 @@ class Plan:
     ready_timeout_s: float = 900.0
     probe: bool = True
     title: str | None = None
+    engine: str | None = None  # "vllm", "sglang", "trtllm"; None: told from the server
 
 
 @dataclass
@@ -85,6 +88,7 @@ class _Run:
     """What one run collected; filled in step by step, so a run cut short keeps its files."""
 
     server: subprocess.Popen[bytes] | None = None
+    engine: engines.Engine | None = None
     boot_log: Path | None = None
     facts: bootlog.BootFacts | None = None
     before: telemetry.Snapshot | None = None
@@ -228,7 +232,7 @@ def _wait_ready(
 
 
 def _stop_server(proc: subprocess.Popen[bytes] | None, grace_s: float = 30.0) -> CheckResult:
-    """Stop the server's session, then any other vLLM process, and wait for a free GPU."""
+    """Stop the server's session, then any other server process, and wait for a free GPU."""
     if proc is not None and proc.poll() is None and _killpg is not None:
         try:
             _killpg(proc.pid, signal.SIGTERM)
@@ -260,9 +264,46 @@ def _gpu_free() -> CheckResult:
     )
 
 
-def _boot_checks(log: Path) -> list[CheckResult]:
+def _other_engine(
+    named: engines.Engine | None, found: engines.Engine | None, what: str
+) -> str | None:
+    """Why the run stops when ``what`` comes from another engine than the one named."""
+    if named is None or found is None or found is named:
+        return None
+    return f"the engine named is {named.name}, but {what} is {found.name}'s"
+
+
+def _no_metrics(url: str, engine: engines.Engine | None, error: str | None) -> str:
+    """Why the run stops when the server serves no engine's metrics, and what to change."""
+    why = f" ({error})" if error else ""
+    if engine is not None:
+        fix = engine.metrics_hint
+    else:
+        fix = "; ".join(f"for {e.name}, {e.metrics_hint}" for e in engines.ENGINES)
+    return f"no vLLM, SGLang or TensorRT-LLM metrics at {url}{why}: {fix}"
+
+
+def _metrics_engine(url: str, st: _Run, say: Callable[[str], None]) -> str | None:
+    """Read the metrics once; settle ``st.engine`` from them. Why to stop, or None."""
+    error: str | None = None
+    names: set[str] = set()
+    try:
+        names = telemetry.scrape(url).metrics.names()
+    except (OSError, ValueError) as e:  # URLError and HTTPError are OSErrors
+        error = str(e)
+    found = engines.named_by(names)
+    if found is None:
+        return _no_metrics(url, st.engine, error)
+    problem = _other_engine(st.engine, found, f"the server at {url}")
+    if problem is None and st.engine is None:
+        st.engine = found
+        say(f"== engine: {found.name} (from its metrics)")
+    return problem
+
+
+def _boot_checks(log: Path, engine: engines.Engine | None = None) -> list[CheckResult]:
     text = log.read_text(encoding="utf-8", errors="replace")
-    facts = bootlog.parse(text)
+    facts = bootlog.parse(text, engine.key if engine is not None else None)
     return [
         checks.check_boot_failure(text),
         checks.check_block_size(facts),
@@ -317,6 +358,17 @@ def _collect(
     say: Callable[[str], None],
 ) -> None:
     out = plan.out
+    st.engine = engines.by_key(plan.engine) if plan.engine else None
+    started = engines.from_command(plan.serve)
+    problem = _other_engine(st.engine, started, "the --serve command")
+    if problem is not None:
+        o.problem = problem
+        return
+    if st.engine is None and started is not None:
+        st.engine = started
+        say(f"== engine: {started.name} (from the --serve command)")
+    elif st.engine is not None:
+        say(f"== engine: {st.engine.name}")
     if plan.serve is not None:
         if not _linux():
             o.problem = "--serve needs Linux (or WSL): stopping the server reads /proc"
@@ -333,24 +385,34 @@ def _collect(
         why = _wait_ready(st.server, st.boot_log, plan.url, plan.ready_timeout_s)
         if why is not None:
             o.problem = why
-            for r in _boot_checks(st.boot_log):
+            for r in _boot_checks(st.boot_log, st.engine):
                 record(r)
             return
     elif not _healthy(plan.url):
         o.problem = f"no server answers at {plan.url}/health"
         return
+    metrics_problem = _metrics_engine(plan.url, st, say)
 
     if st.boot_log is not None:
         say("== boot log")
-        st.facts = bootlog.parse_file(st.boot_log)
+        text = st.boot_log.read_text(encoding="utf-8", errors="replace")
+        problem = _other_engine(st.engine, engines.from_log(text), "the boot log")
+        if problem is not None:
+            o.problem = problem
+            return
+        hint = st.engine.key if st.engine is not None else None
+        st.facts = bootlog.parse(text, hint)
         if st.facts.vllm_version is None:  # SGLang does not print its version
             st.facts.server_version = server_version(plan.url)
         note = bootlog.untested_version(st.facts)
         if note:
             say(f"note: {note}")
-        for r in _boot_checks(st.boot_log):
+        for r in _boot_checks(st.boot_log, st.engine):
             record(r)
         st.files.append(st.boot_log.name)
+    if metrics_problem is not None:
+        o.problem = metrics_problem
+        return
     if plan.probe:
         say("== probe: one request, then 8 at once")
         record(probe(plan.url))
@@ -395,7 +457,7 @@ def _collect(
     if st.boot_log is not None and st.facts is not None:
         # The server log now covers the run too (TensorRT-LLM logs its pauses there).
         version = st.facts.server_version
-        st.facts = bootlog.parse_file(st.boot_log)
+        st.facts = bootlog.parse_file(st.boot_log, st.engine.key if st.engine else None)
         st.facts.server_version = version
     say("== checks")
     for r in report.run_checks(
@@ -433,6 +495,7 @@ def _report(plan: Plan, o: Outcome, st: _Run) -> report.Report:
         sources=st.files,
         extra=[r for r in o.results if r.tripwire in ("T2", "T7", "T15")],
         server_version=st.facts.server_version if st.facts is not None else None,
+        engine=st.engine.key if st.engine is not None else None,
     )
 
 

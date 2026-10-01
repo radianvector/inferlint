@@ -290,7 +290,7 @@ class Unparsed:
 
 @dataclass
 class BootFacts:
-    engine: str | None = None  # "vllm", "sglang"; None when the log does not say
+    engine: str | None = None  # "vllm", "sglang", "trtllm"; else the one named, or None
     vllm_version: str | None = None
     engine_version: str | None = None  # another engine's version, when its log prints it
     # The version the server reported over HTTP, for engines whose log does not print it.
@@ -412,7 +412,8 @@ def _record(
         setattr(facts, name, value)
 
 
-def parse(text: str) -> BootFacts:
+def parse(text: str, engine: str | None = None) -> BootFacts:
+    """The facts in a boot log. ``engine`` is used when the log does not say which wrote it."""
     facts = BootFacts()
     seen: dict[str, list[Any]] = {}
     procs: dict[str, set[int]] = {}
@@ -457,8 +458,8 @@ def parse(text: str) -> BootFacts:
         for k, v in seen.items()
         if len(v) > 1 and k != "selected_backend" and k not in _SUMMED | _LAST_WINS
     }
-    engine = from_log(text)
-    facts.engine = engine.key if engine is not None else None
+    found = from_log(text)
+    facts.engine = found.key if found is not None else engine
 
     if facts.server_args is not None:  # SGLang
         sa = facts.server_args
@@ -515,8 +516,8 @@ def _trt_settings(facts: BootFacts, text: str) -> None:
     facts.speculative = found.get("speculative_config") not in (None, "None")
 
 
-def parse_file(path: str | Path) -> BootFacts:
-    return parse(Path(path).read_text(encoding="utf-8", errors="replace"))
+def parse_file(path: str | Path, engine: str | None = None) -> BootFacts:
+    return parse(Path(path).read_text(encoding="utf-8", errors="replace"), engine)
 
 
 def labels(paths: Sequence[str | Path]) -> list[str]:

@@ -12,6 +12,15 @@ upload dates (UTC).
   and boot log; the commands, `xray` and the report work the same way for all three.
   Tested on SGLang 0.5.20 and TensorRT-LLM 1.3.0rc29. See
   [docs/engines.md](https://github.com/radianvector/inferlint/blob/main/docs/engines.md).
+- **`--engine vllm|sglang|trtllm`**, or the `INFERLINT_ENGINE` environment variable, names
+  the engine for every command that reads one. Without it the engine is told from the
+  input as before. With it, an input from another engine (a wrong port, a file from
+  another run) is refused with exit status 2, and an input that names no engine is read
+  as the named one. `teardown --engine X` stops only X's servers, and `explain --engine X`
+  shows only X's notes.
+- `xray` takes the engine from the `--serve` command before it starts anything, and stops
+  with the setting to change when the server serves no metrics (SGLang:
+  `--enable-metrics`; TensorRT-LLM: `return_perf_metrics: true`).
 - T11 says which part of vLLM's memory split moved between starts, and how many starts
   compiled the model from scratch.
 

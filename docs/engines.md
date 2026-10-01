@@ -9,6 +9,27 @@ RTX 4090 (WSL2, driver 616.56) as the vLLM runs. Other versions get an untested-
 warning where inferlint can read the version: from the boot log for vLLM and TensorRT-LLM,
 and from the server for SGLang, which `xray` asks.
 
+## Naming the engine
+
+inferlint tells the engine from what it reads, so no flag is needed. A team that runs one
+engine can name it once:
+
+```bash
+export INFERLINT_ENGINE=sglang     # or --engine sglang on any command
+```
+
+With an engine named:
+
+- an input from another engine is refused with exit status 2, for example a snapshot
+  taken from a vLLM server on the wrong port;
+- an input that names no engine (a boot log cut short) is read as the named engine's,
+  instead of as vLLM's;
+- `teardown` stops only that engine's servers, and `explain` shows only its notes.
+
+`--engine` takes precedence over the variable. `xray --serve` reads the engine from the
+server command before it starts anything; when the server serves no metrics, it stops
+and says what to change for that engine.
+
 ## What each engine needs
 
 - **SGLang**: start it with `--enable-metrics`.

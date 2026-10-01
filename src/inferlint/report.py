@@ -21,7 +21,7 @@ from . import __version__, bootlog, checks
 from .blocks import predict_concurrency
 from .catalog import ENGINE_NOTES, TRIPWIRES
 from .engines import VLLM as VLLM_ENGINE
-from .engines import Engine, by_key, from_names
+from .engines import Engine, by_key, named_by
 from .result import CheckResult, Status
 from .series import Series
 from .svgchart import Bar, BarChart, Event, Line, RefLine, TimeChart, render_bars, render_time
@@ -276,13 +276,15 @@ def build(
     sources: Sequence[str] = (),
     extra: Sequence[CheckResult] = (),
     server_version: str | None = None,
+    engine: str | None = None,
 ) -> Report:
     """Run every tripwire the given files allow and collect the results.
 
     ``sources`` names the input files, for the report's "Made from" line. ``extra`` adds
     results the files cannot give, from a live run: the probe (T7), the teardown (T2) and
     the client/server comparison (T15). ``server_version`` is the version the live
-    server reported, for engines whose boot log does not print it.
+    server reported, for engines whose boot log does not print it. ``engine`` is the
+    engine the user named, for files that do not say which engine wrote them.
     """
     results: list[CheckResult] = []
     boots: list[tuple[str, bootlog.BootFacts]] = []
@@ -290,7 +292,7 @@ def build(
     many = len(boot_logs) > 1
     for p, name in zip(boot_logs, bootlog.labels(boot_logs), strict=True):
         text = Path(p).read_text(encoding="utf-8", errors="replace")
-        facts = bootlog.parse(text)
+        facts = bootlog.parse(text, engine)
         if not boots:
             boot_s = _boot_seconds(text, facts.ready_lineno)
             if facts.vllm_version is None:
@@ -324,12 +326,12 @@ def build(
     inferred = t14.evidence.get("inferred_usable_blocks") if t14 else None
     usable = inferred if t14 and t14.status is Status.PASS and isinstance(inferred, int) else None
     now = _dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z").strip()
-    engine = _engine(before, after, series, boots)
-    summary = _summarize(before, after, series, engine)
+    found = _engine(before, after, series, boots, engine)
+    summary = _summarize(before, after, series, found)
     summary.boot_s = boot_s
     return Report(
-        engine=engine,
-        title=title or _default_title(boots, engine),
+        engine=found,
+        title=title or _default_title(boots, found),
         results=results,
         boots=boots,
         series=series,
@@ -348,19 +350,22 @@ def _engine(
     after: Snapshot | None,
     series: Series | None,
     boots: Sequence[tuple[str, bootlog.BootFacts]],
+    named: str | None = None,
 ) -> Engine:
-    """Which engine the run's files come from: the snapshots, the recording, the boot log."""
-    snaps = [s for s in (before, after) if s is not None]
-    if snaps:
-        names: set[str] = set()
-        for s in snaps:
+    """Which engine the run's files come from: the snapshots, the recording, the boot log;
+    if none says, the engine the user named, else vLLM."""
+    names: set[str] = set()
+    for s in (before, after):
+        if s is not None:
             names |= s.metrics.names()
-        return from_names(names)
+    found = named_by(names)
+    if found is not None:
+        return found
     if series is not None and isinstance(series.header.get("engine"), str):
         return series.engine
     if boots and boots[0][1].engine:
         return by_key(boots[0][1].engine)
-    return VLLM_ENGINE
+    return by_key(named)
 
 
 def run_checks(

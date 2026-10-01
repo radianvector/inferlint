@@ -153,16 +153,23 @@ def _ancestors(pid: int, procs: Sequence[Proc]) -> set[int]:
     return seen
 
 
-def server_processes(procs: Sequence[Proc], self_pid: int | None = None) -> list[Proc]:
+def server_processes(
+    procs: Sequence[Proc], self_pid: int | None = None, engine: str | None = None
+) -> list[Proc]:
     """Server processes and everything they started, never ``self_pid`` or its ancestors.
 
     Descendants count because some engines hold the GPU in a process with a generic
     name: TensorRT-LLM's model runs in ``python -m mpi4py.futures.server`` under ``prte``,
-    both started by ``trtllm-serve``.
+    both started by ``trtllm-serve``. With ``engine``, only that engine's servers.
     """
     me = os.getpid() if self_pid is None else self_pid
     protected = _ancestors(me, procs)
-    found = {p.pid for p in procs if p.pid not in protected and is_server_process(p)}
+
+    def wanted(p: Proc) -> bool:
+        found = server_engine(p)
+        return found is not None and (engine is None or found == engine)
+
+    found = {p.pid for p in procs if p.pid not in protected and wanted(p)}
     children: dict[int, list[int]] = {}
     for p in procs:
         children.setdefault(p.ppid, []).append(p.pid)
@@ -274,18 +281,26 @@ def teardown(
     timeout_s: float = 120.0,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
+    engine: str | None = None,
 ) -> tuple[list[Proc], ClearResult]:
-    """SIGTERM every server process, SIGKILL survivors after ``grace_s``, then wait for clear."""
-    targets = server_processes(list_procs(), self_pid)
+    """SIGTERM every server process, SIGKILL survivors after ``grace_s``, then wait for clear.
+
+    With ``engine``, only that engine's servers are signalled; the card is still clear
+    only when no server of any engine is left.
+    """
+    targets = server_processes(list_procs(), self_pid, engine)
+
+    def ours() -> int:
+        return len(server_processes(list_procs(), self_pid, engine))
 
     def live() -> int:
         return len(server_processes(list_procs(), self_pid))
 
     kill([p.pid for p in targets], signal.SIGTERM)
     deadline = clock() + grace_s
-    while clock() < deadline and live():
+    while clock() < deadline and ours():
         sleep(0.5)
-    survivors = server_processes(list_procs(), self_pid)
+    survivors = server_processes(list_procs(), self_pid, engine)
     if survivors:
         kill([p.pid for p in survivors], _SIGKILL)
     result = wait_clear(
