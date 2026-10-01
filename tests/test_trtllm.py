@@ -32,6 +32,7 @@ def test_boot_facts() -> None:
     assert (f.kv_pool_tokens, f.available_kv_cache_gib, f.page_size) == (37760, 5.19, 32)
     assert (f.running_cap, f.requested_running, f.model_load_gib) == (32, 32, 15.31)
     assert f.selected_backends == ["TRTLLM"] and f.speculative is False
+    assert f.server_args is not None and f.server_args["model"] == "/root/models/Qwen3-8B"
     assert f.server_args is not None
     assert f.server_args["capacity_scheduler_policy"] == "GUARANTEED_NO_EVICT"
 

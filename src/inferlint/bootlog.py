@@ -503,6 +503,9 @@ def _trt_settings(facts: BootFacts, text: str) -> None:
         return
     line = _ANSI.sub("", lines[at + 1]).strip()
     found: dict[str, Any] = {"llm_args": line}
+    model = re.match(r"model='([^']+)'", line)
+    if model:
+        found["model"] = model.group(1)
     for m in _TRT_ARG.finditer(line):
         found.setdefault(m.group(1), m.group(2))  # nested configs repeat names; first wins
     facts.server_args = found
