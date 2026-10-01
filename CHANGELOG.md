@@ -4,7 +4,7 @@ Each release on [PyPI](https://pypi.org/project/inferlint/) and its
 [GitHub release](https://github.com/radianvector/inferlint/releases). Dates are the PyPI
 upload dates (UTC).
 
-## Unreleased
+## 0.3.0 (2026-10-01)
 
 ### Added
 
