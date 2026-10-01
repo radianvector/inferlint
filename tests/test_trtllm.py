@@ -135,3 +135,29 @@ def test_pauses_are_counted_from_the_log() -> None:
         "(TensorRT-LLM counts none)"
     )
     assert checks.check_no_preemption(before, after, s).status is Status.UNKNOWN
+
+
+def test_without_iteration_stats_the_gauges_are_missing() -> None:
+    """The README's command with only ``return_perf_metrics: true`` in its config.
+
+    TensorRT-LLM then serves its counters and histograms but no running, waiting or KV
+    gauges, so T8 and T9 cannot tell, and say which setting adds them. The counters still
+    give T1 (from the log), T10 and T15.
+    """
+    d = RUN.parent / "no-iter-stats"
+    after = telemetry.load(d / "after.snapshot.json")
+    assert after.metrics.total("trtllm_generation_tokens_total") is not None
+    assert after.metrics.total("trtllm_num_requests_running") is None
+    s = series.read(d / "run.series.jsonl")
+    assert s.engine is engines.TRTLLM
+    t8 = checks.check_concurrency_reached(s, 32)
+    t9 = checks.concurrency_ceiling(s)
+    for r in (t8, t9):
+        assert r.status is Status.UNKNOWN and "'enable_iter_perf_stats: true'" in r.message
+    before = telemetry.load(d / "before.snapshot.json")
+    t15 = checks.check_client_server_agree(
+        benchresult.load(d / "bench.json"), before, after, expected_extra_requests=1
+    )
+    assert t15.status is Status.PASS
+    # vLLM's series without a running gauge gets no TensorRT-LLM advice
+    assert engines.VLLM.gauges_hint == ""

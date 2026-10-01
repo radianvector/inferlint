@@ -32,7 +32,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import pairwise
 from pathlib import Path
 from typing import cast
@@ -45,9 +45,11 @@ __all__ = [
     "Outcome",
     "Plan",
     "exit_code",
+    "load_client",
     "load_concurrency",
     "prepare_load",
     "run",
+    "server_url",
     "server_version",
     "untimed_requests",
 ]
@@ -63,7 +65,7 @@ _SIGKILL: int = getattr(signal, "SIGKILL", 9)
 class Plan:
     out: Path
     load: list[str]
-    url: str = "http://127.0.0.1:8000"
+    url: str = ""  # "": from the serve command's --host and --port (see server_url)
     serve: str | None = None
     boot_log: Path | None = None
     requested: int | None = None
@@ -119,19 +121,43 @@ def load_concurrency(cmd: Sequence[str]) -> int | None:
     return int(v) if v is not None and v.isdigit() else None
 
 
-def _is_vllm_bench_serve(cmd: Sequence[str]) -> bool:
-    return any(a == "bench" and b == "serve" for a, b in pairwise(cmd))
+# The benchmark clients whose result files inferlint reads. vLLM's and TensorRT-LLM's
+# write one JSON document with --save-result; SGLang's appends one JSON line per run to
+# --output-file. All three use vLLM's field names.
+_SGLANG_BENCH = ("sglang.benchmark.serving", "sglang.bench_serving")
+_TRTLLM_BENCH = "tensorrt_llm.serve.scripts.benchmark_serving"
+
+
+def load_client(cmd: Sequence[str]) -> str | None:
+    """Which engine's benchmark client a load command runs: "vllm", "sglang", "trtllm"."""
+    if any(a == "bench" and b == "serve" for a, b in pairwise(cmd)):
+        return "vllm"
+    if any(t in _SGLANG_BENCH for t in cmd):
+        return "sglang"
+    if _TRTLLM_BENCH in cmd:
+        return "trtllm"
+    return None
 
 
 def prepare_load(cmd: Sequence[str], out: Path) -> tuple[list[str], Path | None]:
     """The load command to run, and where its result file will be.
 
-    For ``vllm bench serve`` without ``--save-result``, the flags that save the result
-    into the run folder are added, so the client's own counts can be compared with the
-    server's (T15). A command that already saves its result is left as it is.
+    For a benchmark client inferlint knows (``vllm bench serve``, SGLang's
+    ``python -m sglang.benchmark.serving``, TensorRT-LLM's
+    ``python -m tensorrt_llm.serve.scripts.benchmark_serving``), the flags that save its
+    result into the run folder are added when the command does not already save one, so
+    the client's own counts can be compared with the server's (T15). A command that saves
+    its result is left as it is.
     """
     cmd = list(cmd)
-    if not _is_vllm_bench_serve(cmd):
+    client = load_client(cmd)
+    if client == "sglang":
+        name = _flag_value(cmd, "--output-file")
+        if name is not None:
+            return cmd, Path(name)
+        target = out / "bench.jsonl"
+        return [*cmd, "--output-file", str(target)], target
+    if client is None:
         return cmd, None
     if "--save-result" not in cmd:
         target = out / "bench.json"
@@ -139,20 +165,23 @@ def prepare_load(cmd: Sequence[str], out: Path) -> tuple[list[str], Path | None]
         return cmd, target
     name = _flag_value(cmd, "--result-filename")
     if name is None:
-        return cmd, None  # vLLM names the file; found after the run by _newest_json
+        return cmd, None  # the client names the file; found after the run by _newest_json
     return cmd, Path(_flag_value(cmd, "--result-dir") or ".") / name
 
 
 def untimed_requests(load_output: str) -> int:
-    """Requests ``vllm bench serve`` sent but left out of its result file, from its output.
+    """Requests a benchmark client sent but left out of its result file, from its output.
 
-    It prints "Initial test run completed." after one test request (whether it sends one
-    depends on ``--ready-check-timeout-sec`` and its default, which has changed between
-    releases) and "Warming up with N requests..." for ``--num-warmups``.
+    ``vllm bench serve`` and TensorRT-LLM's client print "Initial test run completed."
+    after one test request (whether vLLM's sends one depends on
+    ``--ready-check-timeout-sec`` and its default, which has changed between releases),
+    and vLLM's prints "Warming up with N requests..." for ``--num-warmups``. SGLang's
+    prints "Warmup completed with N sequences." (``--warmup-requests``, 1 by default).
     """
     n = 1 if "Initial test run completed." in load_output else 0
     m = re.search(r"Warming up with (\d+) requests", load_output)
-    return n + (int(m.group(1)) if m else 0)
+    w = re.search(r"Warmup completed with (\d+) sequences", load_output)
+    return n + (int(m.group(1)) if m else 0) + (int(w.group(1)) if w else 0)
 
 
 def _newest_json(folder: Path, since: float) -> Path | None:
@@ -320,8 +349,33 @@ def _line(r: CheckResult) -> str:
     return f"[{r.tripwire:>3}] {LABELS[r.status]}  {r.message}"
 
 
+def server_url(serve: str | None, engine: str | None = None) -> str:
+    """Where a server started with ``serve`` answers: its ``--host`` and ``--port``, else
+    127.0.0.1 and the engine's default port (vLLM and TensorRT-LLM 8000, SGLang 30000).
+
+    The engine is the one named, else the one ``serve`` starts, else vLLM.
+    """
+    argv: list[str] = []
+    if serve:
+        try:
+            argv = shlex.split(serve)
+        except ValueError:
+            argv = []
+    named = engines.parse_key(engine) if engine else None
+    found = named or engines.from_command(argv) or engines.VLLM
+    host = _flag_value(argv, "--host") or "127.0.0.1"
+    if host in ("0.0.0.0", "::", ""):
+        host = "127.0.0.1"
+    if ":" in host:
+        host = f"[{host}]"
+    port = _flag_value(argv, "--port")
+    return f"http://{host}:{port if port and port.isdigit() else found.default_port}"
+
+
 def run(plan: Plan, say: Callable[[str], None] = print) -> Outcome:
     """Run the whole sequence. Findings never raise; they are in ``Outcome.results``."""
+    if not plan.url:
+        plan = replace(plan, url=server_url(plan.serve, plan.engine))
     plan.out.mkdir(parents=True, exist_ok=True)
     o = Outcome()
     st = _Run(boot_log=plan.boot_log)
@@ -453,7 +507,7 @@ def _collect(
         say(f"the load command exited with code {o.load_exit}")
 
     path = plan.bench_result or result_path
-    if path is None and _is_vllm_bench_serve(cmd):
+    if path is None and load_client(cmd) is not None:
         path = _newest_json(Path(_flag_value(cmd, "--result-dir") or "."), t_load)
     if path is not None and path.is_file():
         st.bench = benchresult.load(path)
@@ -478,7 +532,7 @@ def _collect(
         record(checks.with_timer_comparison(r) if r.tripwire == "T10" else r)
     if st.bench is not None:
         untimed = 0
-        if _is_vllm_bench_serve(cmd):
+        if load_client(cmd) is not None:
             untimed = untimed_requests(
                 (out / "load.log").read_text(encoding="utf-8", errors="replace")
             )

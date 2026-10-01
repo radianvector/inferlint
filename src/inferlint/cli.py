@@ -433,17 +433,19 @@ def _first(folder: Path, name: str, pattern: str) -> str | None:
 
 
 def _bench_in(folder: Path) -> str | None:
-    """The load tool's result file in a run folder: bench.json, or a JSON file like one."""
-    if (folder / "bench.json").is_file():
-        return str(folder / "bench.json")
-    for f in sorted(folder.glob("*.json")):
-        if f.name.endswith(".snapshot.json") or f.name == "results.json":
+    """The load tool's result file in a run folder: bench.json or bench.jsonl, or a file
+    like one."""
+    for name in ("bench.json", "bench.jsonl"):
+        if (folder / name).is_file():
+            return str(folder / name)
+    for f in sorted([*folder.glob("*.json"), *folder.glob("*.jsonl")]):
+        if f.name.endswith((".snapshot.json", ".series.jsonl")) or f.name == "results.json":
             continue
         try:
-            doc = json.loads(f.read_text(encoding="utf-8"))
+            bench = benchresult.load(f)
         except (OSError, ValueError):
             continue
-        if isinstance(doc, dict) and "completed" in doc and "total_output_tokens" in doc:
+        if bench.completed is not None and bench.output_tokens is not None:
             return str(f)
     return None
 
@@ -573,7 +575,10 @@ def _cmd_xray(a: argparse.Namespace) -> int:
     if load and load[0] == "--":
         load = load[1:]
     if not load:
-        print("xray needs the load command after --, e.g. -- vllm bench serve ...")
+        print(
+            "xray needs the load command after --, e.g. -- vllm bench serve ..., or the "
+            "engine's own benchmark client"
+        )
         return 2
     out = Path(a.out or time.strftime("xray-%Y%m%d-%H%M%S"))
     plan = xray.Plan(
@@ -649,8 +654,13 @@ _HELP = {name: text for _, cmds in _GROUPS for name, text in cmds}
 _START = f"""inferlint checks an inference benchmark run for silent problems (tripwires).
 
 Start here:
-  inferlint xray -o run/ --serve "vllm serve MODEL" -- vllm bench serve --model MODEL ...
-      start the server, run the load, check the run, write run/report.html, stop the server
+  inferlint xray -o run/ --serve "SERVER COMMAND" -- LOAD COMMAND
+      start the server, run the load, check the run, write run/report.html, stop the server:
+        --serve "vllm serve MODEL" -- vllm bench serve --model MODEL ...
+        --serve "sglang serve --model-path MODEL --enable-metrics"
+            -- python -m sglang.benchmark.serving --model MODEL ...
+        --serve "trtllm-serve serve MODEL --config llm_api.yaml"
+            -- python -m tensorrt_llm.serve.scripts.benchmark_serving --model MODEL ...
   inferlint xray -o run/ --url http://127.0.0.1:8000 -- <load command>
       the same, against a server that is already running
   inferlint report run/
@@ -725,7 +735,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("before")
     p.add_argument("after")
     p.add_argument("--series", help="recording of the run, for engines that count no preemptions")
-    p.add_argument("--boot-log", help="the server's boot log (its scheduler policy)")
+    p.add_argument(
+        "--boot-log",
+        help="the server's log, saved until after the run: TensorRT-LLM logs each pause there",
+    )
     p.set_defaults(fn=_cmd_preemption)
 
     p = add("rate")
@@ -764,7 +777,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--before", help="snapshot taken before the run")
     p.add_argument("--after", help="snapshot taken after the run")
     p.add_argument("--series", help="gauge series recorded during the run")
-    p.add_argument("--bench-result", help="the load tool's result file (vllm bench serve)")
+    p.add_argument(
+        "--bench-result",
+        help="the load tool's result file (default: bench.json or bench.jsonl in RUN)",
+    )
     p.add_argument("--requested", type=int, help="client concurrency (default: the result's)")
     p.add_argument("--title", help="report title")
     p.set_defaults(fn=_cmd_report)
@@ -775,8 +791,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("xray")
     p.add_argument("-o", "--out", help="folder for every file of the run (default: xray-<time>)")
-    p.add_argument("--serve", help='start the server with this command, e.g. "vllm serve M ..."')
-    p.add_argument("--url", default="http://127.0.0.1:8000", help="the server's address")
+    p.add_argument(
+        "--serve",
+        help='start the server with this command, e.g. "vllm serve M", "sglang serve '
+        '--model-path M --enable-metrics", "trtllm-serve serve M --config llm_api.yaml"',
+    )
+    p.add_argument(
+        "--url",
+        default="",
+        help="the server's address (default: the --host and --port in --serve, else port "
+        "8000, or 30000 for SGLang)",
+    )
     p.add_argument("--boot-log", help="the running server's boot log (when not using --serve)")
     p.add_argument("--requested", type=int, help="concurrency asked for (default: from the load)")
     p.add_argument("--bench-result", help="the load tool's result file (default: found)")

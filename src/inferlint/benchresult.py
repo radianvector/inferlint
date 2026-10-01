@@ -1,9 +1,13 @@
 """The load tool's own account of a run, read from its result file.
 
-``vllm bench serve --save-result`` writes one JSON document per run. inferlint reads the
-counts it needs to compare the client's view with the server's (T15) and the concurrency
-the client asked for (T8), and the latencies the client measured, which the report uses to
-say what limited the run. Every field is None when the file does not have it.
+Each engine's benchmark client can save one: ``vllm bench serve --save-result`` and
+TensorRT-LLM's ``benchmark_serving --save-result`` write one JSON document per run;
+SGLang's ``python -m sglang.benchmark.serving --output-file`` appends one JSON line per
+run, and the last line is the latest run. All three use the same field names. inferlint
+reads the counts it needs to compare the client's view with the server's (T15) and the
+concurrency the client asked for (T8), and the latencies the client measured, which the
+report uses to say what limited the run. Every field is None when the file does not have
+it.
 """
 
 from __future__ import annotations
@@ -66,7 +70,15 @@ def parse(doc: dict[str, Any], path: str = "") -> BenchResult:
 
 
 def load(path: str | Path) -> BenchResult:
-    doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    text = Path(path).read_text(encoding="utf-8")
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        # JSON lines, one per run (SGLang's client appends): the last one is the latest run
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            raise
+        doc = json.loads(lines[-1])
     if not isinstance(doc, dict):
-        raise ValueError(f"{path}: not a vllm bench serve result (expected a JSON object)")
+        raise ValueError(f"{path}: not a benchmark result (expected a JSON object)")
     return parse(cast(dict[str, Any], doc), str(path))

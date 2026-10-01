@@ -20,7 +20,17 @@ upload dates (UTC).
   shows only X's notes.
 - `xray` takes the engine from the `--serve` command before it starts anything, and stops
   with the setting to change when the server serves no metrics (SGLang:
-  `--enable-metrics`; TensorRT-LLM: `return_perf_metrics: true`).
+  `--enable-metrics`; TensorRT-LLM: `return_perf_metrics: true`). T8 and T9 name
+  TensorRT-LLM's `enable_iter_perf_stats: true` when its gauges are missing.
+- **Each engine's own benchmark client.** `xray` asks SGLang's
+  `python -m sglang.benchmark.serving` and TensorRT-LLM's
+  `python -m tensorrt_llm.serve.scripts.benchmark_serving` to save their results, as it
+  does `vllm bench serve`, so T15 and the concurrency asked for (T8) work with each
+  engine's client. SGLang's appends JSON lines (`--output-file`); its warm-up request,
+  like the test request of the other two, is allowed for. `report RUN_FOLDER` finds
+  `bench.jsonl` too.
+- `xray --serve` waits for the server at the `--host` and `--port` of the server
+  command, or the engine's default port (SGLang: 30000), instead of always port 8000.
 - **What limited the run.** The report opens with up to three sentences, and `xray` and
   `report` print them at the end:
   - whether the KV cache could hold the load at full length (concurrency × prompt and
@@ -51,6 +61,11 @@ upload dates (UTC).
   failures and warnings are shown in full.
 - The output-tokens-per-second tile says that the server's count includes idle time
   before and after the load, and gives the load tool's figure beside it.
+- The README, tutorial, landing page and tripwire reference cover all three engines:
+  commands for each, what each needs, tested versions, and where the tripwires differ.
+  `docs/tripwires.md` carries the same per-engine notes as `explain`.
+- For TensorRT-LLM without its server log, T1 says the log saved until after the run is
+  needed to count pauses.
 
 ### Fixed
 

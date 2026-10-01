@@ -71,8 +71,9 @@ SGLANG = MetricNames(
 )
 
 # TensorRT-LLM (verified on 1.3.0rc29) serves these at /prometheus/metrics when started
-# with return_perf_metrics. It pauses a request for recompute where vLLM preempts, and
-# exports only how many are paused at each iteration, not a count of pauses.
+# with return_perf_metrics; the gauges (running, waiting, KV use, paused) only with
+# enable_iter_perf_stats as well. It pauses a request for recompute where vLLM preempts,
+# and exports only how many are paused at each iteration, not a count of pauses.
 TRTLLM = MetricNames(
     running="trtllm_num_requests_running",
     waiting="trtllm_num_requests_waiting",

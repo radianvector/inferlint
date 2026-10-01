@@ -11,31 +11,77 @@ from pathlib import Path
 
 import pytest
 
-from inferlint import cli, xray
+from inferlint import benchresult, cli, engines, series, xray
 from inferlint.result import Status
+
+_METRICS = {
+    # running, waiting, KV use; then the counters, filled in by _Mock.metrics
+    "vllm": (
+        'vllm:num_requests_running{{model_name="m"}} 0.0\n'
+        'vllm:num_requests_waiting{{model_name="m"}} 0.0\n'
+        'vllm:kv_cache_usage_perc{{model_name="m"}} 0.0\n'
+        'vllm:num_preemptions_total{{model_name="m"}} 0.0\n'
+        'vllm:generation_tokens_total{{model_name="m"}} {tokens}.0\n'
+        'vllm:prompt_tokens_total{{model_name="m"}} {prompt}.0\n'
+        'vllm:request_success_total{{finished_reason="length",model_name="m"}} {done}.0\n'
+        'vllm:request_success_total{{finished_reason="error",model_name="m"}} 0.0\n'
+    ),
+    # SGLang exports its retraction counter only after the first retraction; the gauge
+    # beside it says the counter would be there if one had happened
+    "sglang": (
+        'sglang:num_retracted_reqs{{model_name="m"}} 0.0\n'
+        'sglang:num_running_reqs{{model_name="m"}} 0.0\n'
+        'sglang:num_queue_reqs{{model_name="m"}} 0.0\n'
+        'sglang:token_usage{{model_name="m"}} 0.0\n'
+        'sglang:generation_tokens_total{{model_name="m"}} {tokens}.0\n'
+        'sglang:prompt_tokens_total{{model_name="m"}} {prompt}.0\n'
+        'sglang:num_requests_total{{model_name="m"}} {done}.0\n'
+    ),
+    # TensorRT-LLM: served at /prometheus/metrics; /metrics answers JSON
+    "trtllm": (
+        'trtllm_num_requests_running{{model_name="m"}} 0.0\n'
+        'trtllm_num_requests_waiting{{model_name="m"}} 0.0\n'
+        'trtllm_kv_cache_utilization{{model_name="m"}} 0.0\n'
+        'trtllm_num_paused_requests{{model_name="m"}} 0.0\n'
+        'trtllm_generation_tokens_total{{model_name="m"}} {tokens}.0\n'
+        'trtllm_prompt_tokens_total{{model_name="m"}} {prompt}.0\n'
+        'trtllm_request_success_total{{finished_reason="length",model_name="m"}} {done}.0\n'
+    ),
+}
+_VERSION = {"vllm": "/version", "sglang": "/get_server_info", "trtllm": "/version"}
 
 
 class _Mock:
-    """Counts like vLLM: every completion adds one finished request and its tokens."""
+    """Counts like the engine it imitates: each completion adds one request and its tokens."""
 
-    def __init__(self) -> None:
+    def __init__(self, engine: str = "vllm") -> None:
+        self.engine = engine
         self.lock = threading.Lock()
         self.done = 0
         self.tokens = 0
 
     def metrics(self) -> str:
         with self.lock:
-            return (
-                'vllm:num_requests_running{model_name="m"} 0.0\n'
-                'vllm:num_requests_waiting{model_name="m"} 0.0\n'
-                'vllm:kv_cache_usage_perc{model_name="m"} 0.0\n'
-                'vllm:num_preemptions_total{model_name="m"} 0.0\n'
-                f'vllm:generation_tokens_total{{model_name="m"}} {self.tokens}.0\n'
-                f'vllm:prompt_tokens_total{{model_name="m"}} {self.done * 8}.0\n'
-                'vllm:request_success_total{finished_reason="length",model_name="m"} '
-                f"{self.done}.0\n"
-                'vllm:request_success_total{finished_reason="error",model_name="m"} 0.0\n'
+            return _METRICS[self.engine].format(
+                tokens=self.tokens, prompt=self.done * 8, done=self.done
             )
+
+    def page(self, path: str) -> tuple[int, bytes, str]:
+        js, text = "application/json", "text/plain"
+        if path == "/health":
+            return 200, b"{}", js
+        if path == "/v1/models":
+            return 200, json.dumps({"data": [{"id": "m"}]}).encode(), js
+        if path == _VERSION[self.engine]:
+            return 200, json.dumps({"version": "0.0.1"}).encode(), js
+        if self.engine == "trtllm":
+            if path == "/metrics":
+                return 200, b'[{"iter": 1}]', js
+            if path == "/prometheus/metrics":
+                return 200, self.metrics().encode(), text
+        elif path == "/metrics":
+            return 200, self.metrics().encode(), text
+        return 404, b"{}", js
 
 
 def _handler(m: _Mock) -> type[BaseHTTPRequestHandler]:
@@ -51,14 +97,7 @@ def _handler(m: _Mock) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(body)
 
         def do_GET(self) -> None:
-            if self.path == "/health":
-                self._send(200, b"{}")
-            elif self.path == "/v1/models":
-                self._send(200, json.dumps({"data": [{"id": "m"}]}).encode())
-            elif self.path == "/metrics":
-                self._send(200, m.metrics().encode(), "text/plain")
-            else:
-                self._send(404, b"{}")
+            self._send(*m.page(self.path))
 
         def do_POST(self) -> None:
             n = int(self.headers.get("Content-Length", 0))
@@ -73,9 +112,9 @@ def _handler(m: _Mock) -> type[BaseHTTPRequestHandler]:
     return H
 
 
-@pytest.fixture
-def server() -> Iterator[tuple[str, _Mock]]:
-    m = _Mock()
+@pytest.fixture(params=["vllm"])
+def server(request: pytest.FixtureRequest) -> Iterator[tuple[str, _Mock]]:
+    m = _Mock(request.param)
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), _handler(m))
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
@@ -85,7 +124,11 @@ def server() -> Iterator[tuple[str, _Mock]]:
         httpd.shutdown()
 
 
-# A load tool: sends requests, then writes a result file in vllm bench serve's format.
+ALL_ENGINES = pytest.mark.parametrize("server", ["vllm", "sglang", "trtllm"], indirect=True)
+
+
+# A load tool: sends requests, then writes a result file in the format of the engine's own
+# benchmark client. SGLang's appends a line per run, so an earlier run's line comes first.
 _LOAD = """
 import json, sys, urllib.request
 url, n, out, claimed = sys.argv[1], int(sys.argv[2]), sys.argv[3], int(sys.argv[4])
@@ -93,54 +136,75 @@ for _ in range(n):
     body = json.dumps({"model": "m", "prompt": "hi", "max_tokens": 10}).encode()
     req = urllib.request.Request(url + "/v1/completions", body, {"Content-Type": "application/json"})
     urllib.request.urlopen(req).read()
-json.dump({"completed": claimed, "failed": 0, "total_output_tokens": claimed * 10,
-           "max_concurrency": 4, "duration": 1.0}, open(out, "w"))
+doc = {"completed": claimed, "failed": 0, "total_output_tokens": claimed * 10,
+       "max_concurrency": 4, "duration": 1.0}
+if out.endswith(".jsonl"):
+    earlier = {**doc, "completed": 99, "total_output_tokens": 990}
+    open(out, "w").write(json.dumps(earlier) + "\\n" + json.dumps(doc) + "\\n")
+else:
+    json.dump(doc, open(out, "w"))
 print(f"sent {n} requests")
 """
+_RESULT = {"vllm": "result.json", "sglang": "result.jsonl", "trtllm": "result.json"}
 
 
-def _load_cmd(tmp: Path, url: str, sent: int, claimed: int) -> list[str]:
+def _load_cmd(tmp: Path, url: str, sent: int, claimed: int, engine: str = "vllm") -> list[str]:
     script = tmp / "load.py"
     script.write_text(_LOAD, encoding="utf-8")
-    return [sys.executable, str(script), url, str(sent), str(tmp / "result.json"), str(claimed)]
+    out = tmp / _RESULT[engine]
+    return [sys.executable, str(script), url, str(sent), str(out), str(claimed)]
 
 
+@ALL_ENGINES
 def test_attach_runs_the_whole_sequence(tmp_path: Path, server: tuple[str, _Mock]) -> None:
-    url, _ = server
+    url, m = server
     out = tmp_path / "run"
     plan = xray.Plan(
         out=out,
-        load=_load_cmd(tmp_path, url, 6, 6),
+        load=_load_cmd(tmp_path, url, 6, 6, m.engine),
         url=url,
-        bench_result=tmp_path / "result.json",
+        bench_result=tmp_path / _RESULT[m.engine],
         interval_s=0.05,
     )
     o = xray.run(plan, say=lambda _s: None)
     by = {r.tripwire: r for r in o.results}
     assert o.problem is None and o.load_exit == 0
     assert by["T7"].status is Status.PASS  # the probe
-    assert by["T1"].status is Status.PASS and by["T10"].status is Status.PASS
+    assert by["T10"].status is Status.PASS
     assert by["T15"].status is Status.PASS, by["T15"].message
-    assert by["T15"].evidence["extra_requests"] == 0  # not vllm bench: no untimed requests
+    assert by["T15"].evidence["extra_requests"] == 0  # not a known client: no untimed requests
     for f in ("before.snapshot.json", "after.snapshot.json", "run.series.jsonl", "load.log"):
         assert (out / f).is_file(), f
     assert "sent 6 requests" in (out / "load.log").read_text(encoding="utf-8")
     assert o.report is not None and "T15" in o.report.read_text(encoding="utf-8")
     saved = json.loads((out / "results.json").read_text(encoding="utf-8"))
     assert {r["tripwire"] for r in saved} >= {"T1", "T7", "T10", "T15"}
+    assert series.read(out / "run.series.jsonl").engine is engines.by_key(m.engine)
     # The concurrency asked for comes from the result file (4); the mock never reports a
     # running request, so T8 fails, as it would for a server that queued everything.
-    assert by["T8"].status is Status.FAIL and "requested 4" in by["T8"].message
-    assert xray.exit_code(o) == 1
+    # TensorRT-LLM updates that gauge only when a request completes, so a shortfall it
+    # shows may not be real: "can't tell".
+    t8 = by["T8"]
+    assert "4" in t8.message
+    if m.engine == "trtllm":
+        assert t8.status is Status.UNKNOWN
+        # It counts no pauses, and without its server log T1 has nothing to count them from.
+        assert by["T1"].status is Status.UNKNOWN and "counts no pauses" in by["T1"].message
+        assert xray.exit_code(o) == 2
+    else:
+        assert t8.status is Status.FAIL and "requested 4" in t8.message
+        assert by["T1"].status is Status.PASS
+        assert xray.exit_code(o) == 1
 
 
+@ALL_ENGINES
 def test_other_traffic_fails_t15(tmp_path: Path, server: tuple[str, _Mock]) -> None:
-    url, _ = server
+    url, m = server
     plan = xray.Plan(
         out=tmp_path / "run",
-        load=_load_cmd(tmp_path, url, 7, 5),  # the server sees 7; the client reports 5
+        load=_load_cmd(tmp_path, url, 7, 5, m.engine),  # the server sees 7; the client, 5
         url=url,
-        bench_result=tmp_path / "result.json",
+        bench_result=tmp_path / _RESULT[m.engine],
         probe=False,
         interval_s=0.05,
     )
@@ -149,6 +213,16 @@ def test_other_traffic_fails_t15(tmp_path: Path, server: tuple[str, _Mock]) -> N
     assert t15.status is Status.FAIL
     assert "2 more requests than the load tool sent" in t15.message
     assert xray.exit_code(o) == 1
+
+
+@pytest.mark.parametrize("server", ["sglang"], indirect=True)
+def test_the_named_engine_must_be_the_one_serving(
+    tmp_path: Path, server: tuple[str, _Mock]
+) -> None:
+    url, _ = server
+    plan = xray.Plan(out=tmp_path, load=["true"], url=url, engine="trtllm", probe=False)
+    o = xray.run(plan, say=lambda _s: None)
+    assert o.problem is not None and "SGLang" in o.problem
 
 
 def test_no_server_is_a_problem_not_a_crash(tmp_path: Path) -> None:
@@ -179,6 +253,48 @@ def test_the_load_command_is_read_and_completed(tmp_path: Path) -> None:
     assert xray.untimed_requests(skipped) == 0
     assert xray.untimed_requests(tested) == 1
     assert xray.untimed_requests(warmed) == 4
+
+
+def test_each_engines_own_benchmark_client(tmp_path: Path) -> None:
+    """SGLang's and TensorRT-LLM's clients save their results too; xray asks them to."""
+    trt = [
+        "python",
+        "-m",
+        "tensorrt_llm.serve.scripts.benchmark_serving",
+        "--max-concurrency",
+        "32",
+    ]
+    added = ["--save-result", "--result-dir", str(tmp_path), "--result-filename", "bench.json"]
+    assert xray.load_client(trt) == "trtllm"
+    assert xray.prepare_load(trt, tmp_path) == (trt + added, tmp_path / "bench.json")
+    # SGLang's appends one JSON line per run to --output-file
+    sgl: list[str] = []
+    for module in ("sglang.benchmark.serving", "sglang.bench_serving"):
+        sgl = ["python", "-m", module, "--max-concurrency", "32"]
+        assert xray.load_client(sgl) == "sglang" and xray.load_concurrency(sgl) == 32
+        cmd, result = xray.prepare_load(sgl, tmp_path)
+        assert cmd == [*sgl, "--output-file", str(tmp_path / "bench.jsonl")]
+        assert result == tmp_path / "bench.jsonl"
+    own = [*sgl, "--output-file", "mine.jsonl"]
+    assert xray.prepare_load(own, tmp_path) == (own, Path("mine.jsonl"))
+    assert xray.load_client(["locust"]) is None
+    # SGLang's client sends one warm-up request by default and leaves it out of its result
+    sgl_out = "Starting warmup with 1 sequences...\nWarmup completed with 1 sequences. Starting"
+    assert xray.untimed_requests(sgl_out) == 1
+    assert xray.untimed_requests("Initial test run completed. Starting main benchmark") == 1
+
+
+def test_a_json_lines_result_is_read_from_its_last_line(tmp_path: Path) -> None:
+    f = tmp_path / "bench.jsonl"
+    f.write_text(
+        json.dumps({"completed": 5, "total_output_tokens": 50})
+        + "\n"
+        + json.dumps({"completed": 32, "total_output_tokens": 32000, "max_concurrency": 32})
+        + "\n",
+        encoding="utf-8",
+    )
+    got = benchresult.load(f)
+    assert (got.completed, got.output_tokens, got.max_concurrency) == (32, 32000, 32)
 
 
 def test_cli_xray(
@@ -243,3 +359,18 @@ def test_serve_starts_and_always_stops_the_server(
     assert any(r.tripwire == "T12" and r.status is Status.FAIL for r in o.results)
     assert o.report is not None  # the boot log alone still makes a report
     assert xray.exit_code(o) == 1
+
+
+def test_the_server_address_comes_from_the_serve_command() -> None:
+    assert xray.server_url("vllm serve M") == "http://127.0.0.1:8000"
+    assert xray.server_url("vllm serve M --port 8100") == "http://127.0.0.1:8100"
+    assert xray.server_url("vllm serve M --host 0.0.0.0 --port=9000") == "http://127.0.0.1:9000"
+    # SGLang listens on 30000 unless told otherwise; TensorRT-LLM on 8000
+    assert xray.server_url("python -m sglang.launch_server --model-path M") == (
+        "http://127.0.0.1:30000"
+    )
+    assert xray.server_url("sglang serve --model-path M --port 8000") == "http://127.0.0.1:8000"
+    assert xray.server_url("trtllm-serve serve M --host 10.0.0.5") == "http://10.0.0.5:8000"
+    # attached to a running server: the named engine's port
+    assert xray.server_url(None, "sglang") == "http://127.0.0.1:30000"
+    assert xray.server_url(None) == "http://127.0.0.1:8000"

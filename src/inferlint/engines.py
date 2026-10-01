@@ -56,6 +56,10 @@ class Engine:
     metrics_hint: str = ""
     # Does its generated-token counter count a request's tokens only when it finishes?
     tokens_at_finish: bool = False
+    # The port its server listens on when the command gives none.
+    default_port: int = 8000
+    # What to change when the server serves its counters but not its gauges.
+    gauges_hint: str = ""
 
     def witness(self, counter: str) -> str | None:
         return dict(self.witnesses).get(counter)
@@ -85,6 +89,7 @@ SGLANG = Engine(
     # "KV cache pool is full. Retract requests. #retracted_reqs: N" (WARNING)
     logs_preemptions=True,
     metrics_hint="start SGLang with --enable-metrics",
+    default_port=30000,
     # 0.5.20: 3 changes of sglang:generation_tokens_total in 193 readings of a 32-request run
     tokens_at_finish=True,
 )
@@ -102,8 +107,11 @@ TRTLLM = Engine(
     # (1.3.0rc29, serve/openai_server.py), so a reading shows the state as of the last
     # completion. Requests that finish together leave the gauges still until the end.
     gauges_lag=True,
-    metrics_hint="put 'return_perf_metrics: true' in the YAML file given to trtllm-serve "
-    "--config; it then serves them at /prometheus/metrics",
+    metrics_hint="put 'return_perf_metrics: true' and 'enable_iter_perf_stats: true' in the "
+    "YAML file given to trtllm-serve --config; it then serves them at /prometheus/metrics",
+    # 1.3.0rc29: without enable_iter_perf_stats it serves counters and histograms only
+    gauges_hint="TensorRT-LLM serves its running, waiting and KV gauges only with "
+    "'enable_iter_perf_stats: true' in the YAML file given to trtllm-serve --config",
     tokens_at_finish=True,  # 1.3.0rc29: trtllm_generation_tokens_total moves on completion
 )
 ENGINES: tuple[Engine, ...] = (VLLM, SGLANG, TRTLLM)

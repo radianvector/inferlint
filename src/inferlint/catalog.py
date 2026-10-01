@@ -199,8 +199,10 @@ TRIPWIRES: dict[str, Tripwire] = {
     )
 }
 
-# How a tripwire differs on the other engines, keyed by tripwire, then engine. Verified on
-# SGLang 0.5.20 and TensorRT-LLM 1.3.0rc29; the descriptions above are vLLM's.
+# How a tripwire differs on SGLang and TensorRT-LLM, keyed by tripwire, then engine.
+# Verified on SGLang 0.5.20 and TensorRT-LLM 1.3.0rc29. The descriptions above are as vLLM
+# shows each problem, where most were first found; docs/tripwires.md carries these notes
+# too (tests/test_every_engine.py checks that it does).
 ENGINE_NOTES: dict[str, dict[str, str]] = {
     "T1": {
         "sglang": "called a retraction, counted in sglang:num_retracted_requests_total "
@@ -235,8 +237,8 @@ ENGINE_NOTES: dict[str, dict[str, str]] = {
         "rest on few readings.",
     },
     "T14": {
-        "sglang": "checked on vLLM only.",
-        "trtllm": "checked on vLLM only.",
+        "sglang": "does not apply; the reserved null block is vLLM's.",
+        "trtllm": "does not apply; the reserved null block is vLLM's.",
     },
 }
 

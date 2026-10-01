@@ -126,8 +126,8 @@ def _paused_in_recording(
         return CheckResult(
             "T1",
             Status.UNKNOWN,
-            f"{engine.name} exports no {engine.preemption} count, and there is no recording "
-            "of its paused requests",
+            f"{engine.name} counts no {engine.preemption}s; it logs each one, so the server "
+            "log saved until after the run is needed to count them",
             ev,
         )
     busy = [p for p in seen if p > 0]
@@ -157,7 +157,7 @@ def _paused_in_recording(
         "T1",
         Status.UNKNOWN,
         f"no paused request in {len(seen)} readings; {engine.name} counts no pauses, so one "
-        "between readings cannot be ruled out",
+        "between readings cannot be ruled out without the server log saved until after the run",
         ev,
     )
 
@@ -441,7 +441,10 @@ def check_concurrency_reached(
     if args.get("max_num_queued_tokens") is not None:
         ev["max_num_queued_tokens"] = args["max_num_queued_tokens"]
     if peak is None:
-        return CheckResult("T8", Status.UNKNOWN, "series has no num_requests_running samples", ev)
+        msg = "series has no num_requests_running samples"
+        if series.engine.gauges_hint:
+            msg += f"; {series.engine.gauges_hint}"
+        return CheckResult("T8", Status.UNKNOWN, msg, ev)
     lag = series.engine.gauges_lag
     if lag:
         ev["gauges_lag"] = True
@@ -516,7 +519,10 @@ def concurrency_ceiling(
     )
     busy = [s for s in series.samples if s.running and s.kv_usage]
     if not busy:
-        return CheckResult("T9", Status.UNKNOWN, "no sample with requests running and KV in use")
+        msg = "no sample with requests running and KV in use"
+        if series.engine.gauges_hint and all(s.running is None for s in series.samples):
+            msg += f"; {series.engine.gauges_hint}"
+        return CheckResult("T9", Status.UNKNOWN, msg)
     full = [s for s in busy if (s.kv_usage or 0.0) >= saturated]
     basis = "saturated" if full else "busy"
     full = full or busy

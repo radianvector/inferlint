@@ -1,13 +1,13 @@
-# SGLang and TensorRT-LLM
+# vLLM, SGLang and TensorRT-LLM
 
-inferlint reads SGLang and TensorRT-LLM as well as vLLM. It tells the engine from the
-server's metric names and boot log, so the commands are the same for all three, and
+inferlint reads all three engines. It tells the engine from the server command, its
+metric names and its boot log, so the commands are the same for all three, and
 `inferlint xray` starts, records, checks and stops any of them.
 
-Tested on SGLang 0.5.20 and TensorRT-LLM 1.3.0rc29 (a release candidate), on the same
-RTX 4090 (WSL2, driver 616.56) as the vLLM runs. Other versions get an untested-version
-warning where inferlint can read the version: from the boot log for vLLM and TensorRT-LLM,
-and from the server for SGLang, which `xray` asks.
+Tested live on vLLM 0.28, 0.29 and 0.30, SGLang 0.5.20 and TensorRT-LLM 1.3.0rc29 (a
+release candidate), all on the same RTX 4090 (WSL2, driver 616.56). Other versions get
+an untested-version warning where inferlint can read the version: from the boot log for
+vLLM and TensorRT-LLM, and from the server for SGLang, which `xray` asks.
 
 ## Naming the engine
 
@@ -32,18 +32,46 @@ and says what to change for that engine.
 
 ## What each engine needs
 
-- **SGLang**: start it with `--enable-metrics`.
-- **TensorRT-LLM**: put `return_perf_metrics: true` in the YAML file given to
-  `trtllm-serve --config`. inferlint then reads Prometheus text from
-  `/prometheus/metrics`; `/metrics` returns JSON. Keep its log at INFO, the default: T1
-  counts the pauses it logs there.
+- **vLLM**: nothing; it serves its metrics at `/metrics`.
+- **SGLang**: start it with `--enable-metrics`. It listens on port 30000 unless given
+  `--port`; `xray` reads the port from the `--serve` command, else uses the engine's
+  default.
+- **TensorRT-LLM**: put `return_perf_metrics: true` and `enable_iter_perf_stats: true`
+  in the YAML file given to `trtllm-serve --config`. inferlint then reads Prometheus text
+  from `/prometheus/metrics`; `/metrics` returns JSON. With `return_perf_metrics` alone,
+  TensorRT-LLM serves its counters but no running, waiting or KV gauges, and T8 and T9
+  say "can't tell" and name the missing setting (recorded in
+  `tests/fixtures/trtllm-1.3/no-iter-stats/`). Keep its log at INFO, the default: T1
+  counts the pauses it logs there, so `preemption` and `report` need that log saved
+  until after the run (`--boot-log`); `xray` saves it.
 
-For example:
+## Each engine's benchmark client
+
+`xray` recognises each engine's own benchmark client, asks it to save its result in the
+run folder, and compares the client's counts with the server's (T15):
+
+| client | result file | requests it leaves out of its result |
+|---|---|---|
+| `vllm bench serve` | `--save-result`: one JSON document | an initial test request, and `--num-warmups` |
+| `python -m sglang.benchmark.serving` (or `sglang.bench_serving`) | `--output-file`: one JSON line appended per run | `--warmup-requests`, 1 by default |
+| `python -m tensorrt_llm.serve.scripts.benchmark_serving` | `--save-result`: vLLM's format | an initial test request |
+
+All three use vLLM's field names and print the requests they leave out, which `xray`
+reads from their output. `inferlint report RUN_FOLDER` finds `bench.json` or
+`bench.jsonl` in the folder. Any load tool works; the others run as they are, without
+T15.
 
 ```bash
-inferlint xray -o run/ --serve "python -m sglang.launch_server --model-path MODEL --enable-metrics" \
-    -- vllm bench serve --model MODEL --dataset-name random --random-input-len 88 \
-       --random-output-len 1000 --ignore-eos --num-prompts 32 --max-concurrency 32
+inferlint xray -o run/ --serve "sglang serve --model-path MODEL --enable-metrics" \
+    -- python -m sglang.benchmark.serving --model MODEL --dataset-name random-ids \
+       --random-input-len 88 --random-output-len 1000 --random-range-ratio 1 \
+       --num-prompts 32 --max-concurrency 32
+
+printf 'return_perf_metrics: true\nenable_iter_perf_stats: true\n' > llm_api.yaml
+inferlint xray -o run/ --serve "trtllm-serve serve MODEL --config llm_api.yaml" \
+    -- python -m tensorrt_llm.serve.scripts.benchmark_serving --model MODEL \
+       --dataset-name random --random-ids --random-input-len 88 --random-output-len 1000 \
+       --ignore-eos --num-prompts 32 --max-concurrency 32
 ```
 
 ## One model, three engines
@@ -65,8 +93,35 @@ vLLM counted 1.14 GiB more for weights and non-torch memory and a 1 GiB higher a
 peak, which left 4.44 GiB for the KV cache instead of 6.58 GiB (T4, T11). SGLang's two
 starts drew the same pool, as did TensorRT-LLM's.
 
+**With each engine's own client.** The same servers and load, sent by SGLang's and
+TensorRT-LLM's own benchmark clients through `xray`:
+
+| | SGLang 0.5.20, `sglang.benchmark.serving` | TensorRT-LLM 1.3.0rc29, `benchmark_serving` |
+|---|---|---|
+| Most running at once (T8) | 32 | 32 |
+| Preempted (T1) | 3 retractions | 0 pauses in its log |
+| Output tokens per second (the client's count) | 1,342 (1,337 and 1,340 in two repeats) | 1,405 |
+| Time to first token, median | 304 ms | 371 ms |
+| Client and server counts (T15) | agree, plus its 1 warm-up request | agree, plus its 1 test request |
+
+TensorRT-LLM gave the same result under both clients. SGLang ran more at once under its
+own client, which sends requests to SGLang's native `/generate` endpoint rather than
+`/v1/completions`, and generated 1.7 times as many tokens per second: 1,337 to 1,342 in
+three runs, against 799 and 800 in two runs with `vllm bench serve`. Whether the
+endpoint or the client makes the difference has not been tested. The server settings
+matter as much: with SGLang's defaults for the running limit (2048) and context length,
+and the same memory fraction, its own client ran at most 31 at once and reached 821.
+
+**SGLang's default memory fraction.** Started without `--mem-fraction-static`, SGLang
+0.5.20 chose 0.704 on this card (against 0.88 in the runs above) and sized a 3,411-token
+KV pool. With the same load, 3 requests fit at full length: it ran at most 5 at once,
+retracted 8, and reached 22% of the throughput its per-token speed allows. inferlint
+reported each of these (T1, T8, and what limited the run).
+
 The files are in `tests/fixtures/vllm-0.30/qwen3-8b-start1/`, `qwen3-8b-start2/`,
-`tests/fixtures/sglang-0.5/qwen3-8b/` and `tests/fixtures/trtllm-1.3/qwen3-8b/`.
+`tests/fixtures/sglang-0.5/qwen3-8b/`, `qwen3-8b-start2/` and `qwen3-8b-own-client/`, and
+`tests/fixtures/trtllm-1.3/qwen3-8b/`, `qwen3-8b-start2/` and `qwen3-8b-own-client/`.
+`tests/test_every_engine.py` runs every command on them.
 
 ## How the tripwires differ
 
@@ -117,5 +172,5 @@ can; `xray` waits for both.
 
 ## Not tested
 
-Multi-GPU and multi-node setups, speculative decoding (T6) on these engines, and other
-engines.
+Multi-GPU and multi-node setups, speculative decoding (T6) on SGLang and TensorRT-LLM,
+other GPUs, and other engines.

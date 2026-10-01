@@ -18,7 +18,7 @@ FX = Path(__file__).parent / "fixtures"
 
 @pytest.mark.parametrize(
     "path",
-    sorted(FX.glob("*/**/*.log")),
+    sorted(p for p in FX.glob("*/**/*.log") if p.name != "load.log"),  # server logs only
     ids=lambda p: str(p.relative_to(FX)),
 )
 def test_every_fixture_log_is_told_apart(path: Path) -> None:

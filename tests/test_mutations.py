@@ -11,6 +11,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -68,6 +69,10 @@ def text_check(name: str, fn: Callable[[str], CheckResult]) -> Callable[[Edit], 
     return lambda e: fn(e(fixture_text(name)))
 
 
+def text_check_path(path: Path, fn: Callable[[str], CheckResult]) -> Callable[[Edit], CheckResult]:
+    return lambda e: fn(e(path.read_text(encoding="utf-8")))
+
+
 def series_check(
     stem: str, fn: Callable[[series.Series, telemetry.Snapshot], CheckResult]
 ) -> Callable[[Edit], CheckResult]:
@@ -91,6 +96,62 @@ def t15(edit_bench: Edit) -> CheckResult:
         telemetry.load(LIVE_030 / "before.snapshot.json"),
         telemetry.load(LIVE_030 / "after.snapshot.json"),
     )
+
+
+SGL = FIXTURES.parent / "sglang-0.5"
+TRT = FIXTURES.parent / "trtllm-1.3"
+
+
+def snap_file(path: Path, edit: Edit = ident) -> telemetry.Snapshot:
+    s = telemetry.load(path)
+    return telemetry.Snapshot(s.url, edit(s.text), s.t_wall, s.t_mono_ns, s.latency_s)
+
+
+def text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def sgl_t1(edit_after: Edit) -> CheckResult:
+    """SGLang retracted one request; its counter appears only with the first retraction."""
+    d = SGL / "retraction"
+    return checks.check_no_preemption(
+        snap_file(d / "before.snapshot.json"), snap_file(d / "after.snapshot.json", edit_after)
+    )
+
+
+def trt_t1(edit_log: Edit) -> CheckResult:
+    """TensorRT-LLM paused 13 requests and counts none; inferlint counts its log lines."""
+    d = TRT / "pauses"
+    return checks.check_no_preemption(
+        snap_file(d / "before.snapshot.json"),
+        snap_file(d / "after.snapshot.json"),
+        series.read(d / "run.series.jsonl"),
+        bootlog.parse(edit_log(text(d / "boot.log"))),
+    )
+
+
+def two_starts(root: Path, fn: Callable[..., list[CheckResult]]) -> Callable[[Edit], CheckResult]:
+    """Two starts of Qwen3-8B with the same flags; the edit applies to the second."""
+    a = bootlog.parse(text(root / "qwen3-8b" / "boot.log"))
+    return lambda e: fn([a, bootlog.parse(e(text(root / "qwen3-8b-start2" / "boot.log")))])[0]
+
+
+def engine_t15(root: Path) -> Callable[[Edit], CheckResult]:
+    d = root / "qwen3-8b"
+    return lambda e: checks.check_client_server_agree(
+        benchresult.parse(json.loads(e(text(d / "bench.json")))),
+        telemetry.load(d / "before.snapshot.json"),
+        telemetry.load(d / "after.snapshot.json"),
+    )
+
+
+def drop_lines(*words: str) -> Edit:
+    def f(s: str) -> str:
+        kept = [ln for ln in s.splitlines() if not any(w in ln for w in words)]
+        assert len(kept) < len(s.splitlines()), f"no line has {words}"
+        return "\n".join(kept)
+
+    return f
 
 
 @dataclass(frozen=True)
@@ -200,6 +261,73 @@ MUTANTS = [
         Status.PASS,
         Status.UNKNOWN,
     ),
+    # SGLang: without its retraction counter (it appears only at the first one), no retraction
+    Mutant(
+        "sglang-T1",
+        sgl_t1,
+        sub(r"(?m)^sglang:num_retracted_requests_total\{.*\n", ""),
+        Status.FAIL,
+        Status.PASS,
+    ),
+    # SGLang: a second start that drew a smaller pool, and less memory for it
+    Mutant(
+        "sglang-T4",
+        two_starts(SGL, checks.check_same_pool),
+        sub(r"32096", "30016"),
+        Status.PASS,
+        Status.WARN,
+    ),
+    Mutant(
+        "sglang-T11",
+        two_starts(SGL, checks.check_kv_memory_stable),
+        sub(r"K size: 2\.20 GB, V size: 2\.20 GB", "K size: 2.05 GB, V size: 2.05 GB"),
+        Status.PASS,
+        Status.WARN,
+    ),
+    Mutant(
+        "sglang-T12",
+        text_check_path(SGL / "boot_fail_mamba_state.log", checks.check_boot_failure),
+        drop_lines("Error", "Traceback"),
+        Status.FAIL,
+        Status.PASS,
+    ),
+    Mutant(
+        "sglang-T15",
+        engine_t15(SGL),
+        sub(r'"completed": 32,', '"completed": 30,'),
+        Status.PASS,
+        Status.FAIL,
+    ),
+    # TensorRT-LLM: with its pause lines gone, the log shows none
+    Mutant("trtllm-T1", trt_t1, drop_lines("-> pause"), Status.FAIL, Status.PASS),
+    Mutant(
+        "trtllm-T4",
+        two_starts(TRT, checks.check_same_pool),
+        sub(r"paged KV cache \(37760\)", "paged KV cache (35200)"),
+        Status.PASS,
+        Status.WARN,
+    ),
+    Mutant(
+        "trtllm-T11",
+        two_starts(TRT, checks.check_kv_memory_stable),
+        sub(r"5\.19 GiB", "4.81 GiB"),
+        Status.PASS,
+        Status.WARN,
+    ),
+    Mutant(
+        "trtllm-T12",
+        text_check_path(TRT / "boot_fail_compressed_tensors_w4a16.log", checks.check_boot_failure),
+        drop_lines("Error", "Traceback"),
+        Status.FAIL,
+        Status.PASS,
+    ),
+    Mutant(
+        "trtllm-T15",
+        engine_t15(TRT),
+        sub(r'"completed": 32,', '"completed": 34,'),
+        Status.PASS,
+        Status.FAIL,
+    ),
 ]
 
 _CREATED_A = {
@@ -241,3 +369,12 @@ def test_t8_boundary_is_exact() -> None:
     s = series.read(FIXTURES / "series" / "ladder.series.jsonl")
     assert checks.check_concurrency_reached(s, 4).status is Status.PASS
     assert checks.check_concurrency_reached(s, 5).status is Status.FAIL
+    # SGLang ran at most 29 of 32 at once
+    s = series.read(SGL / "qwen3-8b" / "run.series.jsonl")
+    assert checks.check_concurrency_reached(s, 29).status is Status.PASS
+    assert checks.check_concurrency_reached(s, 30).status is Status.FAIL
+    # TensorRT-LLM showed 32 at the last reading; its gauges move only on completions, so
+    # a shortfall above that is "can't tell", never a pass
+    s = series.read(TRT / "qwen3-8b" / "run.series.jsonl")
+    assert checks.check_concurrency_reached(s, 32).status is Status.PASS
+    assert checks.check_concurrency_reached(s, 33).status is Status.UNKNOWN

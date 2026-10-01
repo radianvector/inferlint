@@ -1,0 +1,54 @@
+Skipping import of cpp extensions due to incompatible torch version 2.14.0+cu130 for torchao version 0.15.0             Please see https://github.com/pytorch/ao/issues/2919 for more info
+/opt/venv/lib/python3.12/site-packages/flashinfer/cutile/cutile_common.py:64: UserWarning: Installed NVIDIA pip packages have mismatched versions (nvidia-cuda-tileiras 13.1.80, nvidia-cuda-nvcc 13.0.88, nvidia-nvvm 13.0.88). Falling back to system tileiras.
+  binary = _find_compiler_bin()
+[TensorRT-LLM] TensorRT LLM version: 1.3.0rc29
+/opt/venv/lib/python3.12/site-packages/tensorrt_llm/serve/openai_protocol.py:220: UserWarning: Field name "schema" in "ResponseFormat" shadows an attribute in parent "OpenAIBaseModel"
+  class ResponseFormat(OpenAIBaseModel):
+Namespace(backend='openai', base_url=None, host='127.0.0.1', port=8000, endpoint='/v1/completions', dataset_name='random', dataset_path=None, download_path=None, download_timeout=180, max_concurrency=32, model='qwen3-8b', tokenizer='/root/models/Qwen3-8B', use_beam_search=False, num_prompts=32, logprobs=None, request_rate=inf, burstiness=1.0, non_streaming=False, seed=0, trust_remote_code=False, custom_tokenizer=None, disable_tqdm=False, profile=False, save_result=True, save_detailed=False, metadata=None, result_dir='/run', result_filename='bench.json', ignore_eos=True, percentile_metrics='ttft,tpot,itl', metric_percentiles='99', goodput=None, sonnet_input_len=550, sonnet_output_len=150, sonnet_prefix_len=200, sharegpt_output_len=None, random_input_len=88, random_output_len=1000, random_range_ratio=0.0, random_prefix_len=0, random_ids=True, tokenize_on_client=False, random_image_width=512, random_image_height=512, random_image_size=512, random_num_images=1, hf_subset=None, hf_split=None, hf_output_len=None, trtllm_custom_output_len=None, top_p=None, top_k=None, min_p=None, temperature=None, tokenizer_mode='auto', served_model_name=None, lora_modules=None, no_test_input=False, save_request_time_breakdown=None)
+RandomDataset.sample() started...
+RandomDataset.sample() completed in 0.0021 seconds
+Starting initial single prompt test run...
+Initial test run completed. Starting main benchmark run...
+Traffic request rate: inf
+Burstiness factor: 1.0 (Poisson process)
+Maximum request concurrency: 32
+
+Benchmarking:   0%|          | 0/32 [00:00<?, ?it/s]
+Benchmarking:   3%|▎         | 1/32 [00:22<11:41, 22.64s/it]
+Benchmarking:   6%|▋         | 2/32 [00:22<04:43,  9.45s/it]
+Benchmarking: 100%|██████████| 32/32 [00:22<00:00,  1.40it/s]
+Total failed requests: 0
+============ Serving Benchmark Result ============
+Total requests:                          32        
+Successful requests:                     32        
+Failed requests:                         0         
+Benchmark duration (s):                  22.77     
+Total input tokens:                      2816      
+Total generated tokens:                  32000     
+Request throughput (req/s):              1.41      
+Output token throughput (tok/s):         1405.14   
+Total Token throughput (tok/s):          1528.79   
+User throughput (tok/s):                 43.99     
+-----------Avg Decoded Tokens per Iter------------
+Mean Avg Decoded Tokens per Iter:        1.00      
+Median Avg Decoded Tokens per Iter:      1.00      
+Std Dev Avg Decoded Tokens per Iter:     0.00      
+Min Avg Decoded Tokens per Iter:         1.00      
+Max Avg Decoded Tokens per Iter:         1.00      
+P99 Avg Decoded Tokens per Iter:         1.00      
+---------------Time to First Token----------------
+Mean TTFT (ms):                          363.41    
+Median TTFT (ms):                        370.86    
+Std Dev TTFT (ms):                       44.27     
+P99 TTFT (ms):                           375.27    
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          22.39     
+Median TPOT (ms):                        22.39     
+Std Dev TPOT (ms):                       0.01      
+P99 TPOT (ms):                           22.42     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           22.39     
+Median ITL (ms):                         22.19     
+Std Dev ITL (ms):                        7.45      
+P99 ITL (ms):                            26.24     
+==================================================
