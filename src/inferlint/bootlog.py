@@ -275,6 +275,8 @@ _EAGER_MARKER = "Cudagraph is disabled under eager mode"
 # the count means something only when INFO lines ("[TRT-LLM] [I]") are logged at all.
 _TRT_PAUSE = re.compile(r"request ID \d+ -> pause\b")
 _TRT_INFO = "[TRT-LLM] [I]"
+# A request the server answered; a log without any did not cover a run.
+_SERVED = re.compile(r'"POST /\S+ HTTP/[\d.]+" 200\b')
 _COMPILED_MARKER = "Compiling a graph for compile range"
 _CACHED_COMPILE_MARKER = "Directly load AOT compilation"
 
@@ -321,8 +323,10 @@ class BootFacts:
     peak_activation_gib: float | None = None
     compile_s: float | None = None  # torch.compile, all models together
     compiled_fresh: bool | None = None  # compiled from scratch (True) or loaded (False)
-    # Requests TensorRT-LLM paused for recompute, from its log; None if it logs no INFO.
+    # Requests TensorRT-LLM paused for recompute, from its log; None if the log has no INFO
+    # lines or covers no served request, so cannot have recorded them.
     pauses: int | None = None
+    served_in_log: int | None = None  # requests the log shows answered (HTTP 200)
     speculative: bool | None = None
     ready: bool = False
     ready_lineno: int | None = None
@@ -472,7 +476,8 @@ def parse(text: str) -> BootFacts:
 
     if facts.engine == "trtllm":
         _trt_settings(facts, text)
-        if _TRT_INFO in text:
+        facts.served_in_log = len(_SERVED.findall(text))
+        if _TRT_INFO in text and facts.served_in_log:
             facts.pauses = len(_TRT_PAUSE.findall(text))
 
     args = facts.non_default_args or {}

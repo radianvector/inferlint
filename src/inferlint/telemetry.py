@@ -121,7 +121,19 @@ def scrape(
     places servers put it are tried, and the one that works is used from then on.
     """
     base = base_url.rstrip("/")
-    url = base + (path or _found_path.get(base, "/metrics"))
+    if path is None and base in _found_path:
+        try:
+            return scrape(
+                base,
+                path=_found_path[base],
+                timeout=timeout,
+                fetch=fetch,
+                wall=wall,
+                mono_ns=mono_ns,
+            )
+        except Exception:  # another server answers here now: start again from /metrics
+            del _found_path[base]
+    url = base + (path or "/metrics")
     w0, m0 = wall(), mono_ns()
     text = fetch(url, timeout)
     if path is None and _is_json(text):

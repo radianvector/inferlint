@@ -139,3 +139,15 @@ def test_server_version(monkeypatch: pytest.MonkeyPatch) -> None:
     assert xray.server_version("http://x:1") == "0.5.20"
     monkeypatch.setattr(urllib.request, "urlopen", serve({}))
     assert xray.server_version("http://x:1") is None
+
+
+def test_a_remembered_path_that_fails_is_forgotten() -> None:
+    pages = {"http://z:1/metrics": '[{"iter": 1}]', "http://z:1/prometheus/metrics": "a 1\n"}
+
+    def fetch(url: str, timeout: float) -> str:
+        return pages[url]
+
+    assert telemetry.scrape("http://z:1", fetch=fetch).url.endswith("/prometheus/metrics")
+    pages = {"http://z:1/metrics": "vllm:num_requests_running 2.0\n"}  # another server
+    s = telemetry.scrape("http://z:1", fetch=fetch)
+    assert s.url == "http://z:1/metrics" and s.metrics.total("vllm:num_requests_running") == 2

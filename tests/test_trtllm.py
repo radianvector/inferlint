@@ -51,7 +51,12 @@ def test_run_checks() -> None:
     # No preemption counter. The server log, read after the run, has no pause line.
     assert facts.pauses == 0
     t1 = checks.check_no_preemption(before, after, s, facts)
-    assert (t1.status, t1.message) == (Status.PASS, "no pause in the server log")
+    assert t1.status is Status.PASS
+    assert t1.message == "no pause in the server log, which covers 41 answered requests"
+    # A log saved only up to the ready line covers no request, so it counts nothing.
+    text = (RUN / "boot.log").read_text(encoding="utf-8")
+    start = bootlog.parse(text[: text.index("Application startup complete")])
+    assert start.pauses is None and start.served_in_log == 0
     # Logged below INFO there would be no pause lines to count; the scheduler policy,
     # which admits a request only when its whole output fits, still rules pauses out.
     facts.pauses = None

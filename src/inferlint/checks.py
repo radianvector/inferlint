@@ -103,8 +103,9 @@ def _paused_in_recording(
     gauge = engine.metrics.paused
     ev: dict[str, object] = {"engine": engine.key, "series": gauge}
     logged = facts.pauses if facts is not None else None
-    if logged is not None:
-        ev["paused_in_log"] = logged
+    if facts is not None and logged is not None:
+        served = facts.served_in_log or 0
+        ev |= {"paused_in_log": logged, "served_in_log": served}
         if logged:
             return CheckResult(
                 "T1",
@@ -114,7 +115,10 @@ def _paused_in_recording(
                 {**ev, "preemptions": logged},
             )
         return CheckResult(
-            "T1", Status.PASS, "no pause in the server log", {**ev, "preemptions": 0}
+            "T1",
+            Status.PASS,
+            f"no pause in the server log, which covers {served} answered requests",
+            {**ev, "preemptions": 0},
         )
     seen = [s.paused for s in series.samples if s.paused is not None] if series else []
     if not seen:
