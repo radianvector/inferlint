@@ -1,0 +1,25 @@
+name: Recorded run from a new vLLM version or GPU
+description: Share the files from a run so inferlint can be tested on your version.
+labels: [evidence]
+body:
+  - type: input
+    id: versions
+    attributes:
+      label: vLLM version, GPU, model
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Commands
+      description: The vllm serve and load commands, as run.
+      render: bash
+  - type: textarea
+    id: files
+    attributes:
+      label: Files
+      description: >
+        boot.log, before.snapshot.json, after.snapshot.json, run.series.jsonl, results.json
+        and bench.json, with home directories and model paths removed. See CONTRIBUTING.md.
+    validations:
+      required: true

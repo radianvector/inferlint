@@ -1,0 +1,24 @@
+name: Propose a tripwire
+description: A way a serving benchmark can report a wrong number without an error.
+labels: [proposal]
+body:
+  - type: textarea
+    id: symptom
+    attributes:
+      label: What happens
+      description: What the server does, and what it does not say.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Which number it changes, and by how much
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Logs, /metrics output or a run folder that shows it, and the versions involved.
+    validations:
+      required: true

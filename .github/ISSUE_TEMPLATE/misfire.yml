@@ -1,0 +1,39 @@
+name: A tripwire misfired
+description: A tripwire passed when it should have failed, failed when it should have passed, or said Can't tell.
+labels: [misfire]
+body:
+  - type: input
+    id: tripwire
+    attributes:
+      label: Tripwire
+      description: Code or name, e.g. T8 or concurrency-not-reached.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: What inferlint printed
+      render: console
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and why
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: inferlint, vLLM, GPU, driver. `inferlint --version`, `vllm --version`, `inferlint gpu-inspect`.
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Files
+      description: >
+        Attach the files from the run, with home directories and model paths removed:
+        boot.log, before.snapshot.json, after.snapshot.json, run.series.jsonl, results.json,
+        and bench.json if there is one. `inferlint xray -o run/` saves them all in one folder.

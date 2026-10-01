@@ -1,0 +1,42 @@
+name: publish
+
+# Publishing a GitHub release tests and builds the package and uploads it to PyPI with
+# Trusted Publishing, so no PyPI token is stored anywhere. The release tag must match the
+# version in pyproject.toml: tag v0.2.0 for version 0.2.0.
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The tag matches the package version
+        run: |
+          v=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          test "$GITHUB_REF_NAME" = "v$v" || { echo "tag $GITHUB_REF_NAME does not match version $v"; exit 1; }
+      - run: pip install -e ".[dev]" build twine
+      - run: pytest -q
+      - run: python -m build
+      - run: twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
