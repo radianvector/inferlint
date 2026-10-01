@@ -97,6 +97,8 @@ def test_report() -> None:
     assert rep.summary.finished == {"length": 32}
     html = report.render(rep)
     assert "T14 (does not apply to TensorRT-LLM)" in html
+    assert "On TensorRT-LLM: a request is paused for recompute" in html
+    assert "On SGLang" not in html
 
 
 def test_pauses_are_counted_from_the_log() -> None:

@@ -21,8 +21,19 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from . import __version__, bootlog, checks, gpu, report, series, teardown, telemetry, xray
-from .catalog import TRIPWIRES, lookup
+from . import (
+    __version__,
+    bootlog,
+    checks,
+    engines,
+    gpu,
+    report,
+    series,
+    teardown,
+    telemetry,
+    xray,
+)
+from .catalog import ENGINE_NOTES, TRIPWIRES, lookup
 from .probe import probe
 from .result import LABELS, CheckResult, Status
 
@@ -319,7 +330,8 @@ def _cmd_explain(a: argparse.Namespace) -> int:
     for t in found:
         assert t is not None
         print(f"{t.id}  {t.name}  ({t.slug})")
-        for para in (t.what, "Why it matters: " + t.why):
+        notes = [f"On {engines.by_key(k).name}: {v}" for k, v in ENGINE_NOTES.get(t.id, {}).items()]
+        for para in (t.what, "Why it matters: " + t.why, *notes):
             print(textwrap.fill(para, width, initial_indent="    ", subsequent_indent="    "))
         print(f"    Check: {t.command}")
         print()

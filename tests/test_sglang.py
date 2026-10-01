@@ -140,6 +140,7 @@ def test_report() -> None:
     html = report.render(rep)
     assert "T14 (does not apply to SGLang)" in html
     assert "SGLang 0.5.20" in html and "<dt>SGLang</dt><dd>0.5.20</dd>" in html
+    assert "On SGLang: called a retraction" in html and "On TensorRT-LLM" not in html
 
 
 def test_processes() -> None:

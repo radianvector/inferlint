@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ["TRIPWIRES", "Tripwire", "lookup"]
+__all__ = ["ENGINE_NOTES", "TRIPWIRES", "Tripwire", "lookup"]
 
 # vLLM releases the version-specific statements below were verified on.
 VERIFIED = "verified on vLLM 0.28, 0.29 and 0.30"
@@ -197,6 +197,47 @@ TRIPWIRES: dict[str, Tripwire] = {
             "inferlint xray -o results/ -- vllm bench serve ...",
         ),
     )
+}
+
+# How a tripwire differs on the other engines, keyed by tripwire, then engine. Verified on
+# SGLang 0.5.20 and TensorRT-LLM 1.3.0rc29; the descriptions above are vLLM's.
+ENGINE_NOTES: dict[str, dict[str, str]] = {
+    "T1": {
+        "sglang": "called a retraction, counted in sglang:num_retracted_requests_total "
+        "(exported only after the first one) and logged as a warning each time.",
+        "trtllm": "a request is paused for recompute and nothing counts it. Each pause is "
+        "logged at INFO, and inferlint counts those lines in the server log. The default "
+        "scheduler policy, GUARANTEED_NO_EVICT, pauses none.",
+    },
+    "T2": {
+        "sglang": "the workers are sglang::scheduler and sglang::detokenizer. In tests "
+        "they exited when the launcher was killed.",
+        "trtllm": "the model runs in python -m mpi4py.futures.server under prte, both "
+        "started by trtllm-serve. In tests they exited when trtllm-serve was killed.",
+    },
+    "T5": {
+        "sglang": "KV is allocated per token (page size 1). For hybrid attention/Mamba "
+        "models a fixed state slot per running request limits concurrency instead (T8).",
+        "trtllm": "KV is allocated in blocks of tokens_per_block tokens, 32 by default.",
+    },
+    "T8": {
+        "sglang": "the running limit can be lowered below --max-running-requests, for "
+        "hybrid models to fit the per-request state slots. The log says so once; "
+        "/get_server_info still reports the value the server was started with.",
+        "trtllm": "gauges are updated only when a request completes, so a recording can "
+        "miss the peak.",
+    },
+    "T9": {
+        "sglang": "the usage gauge, sglang:token_usage, is the fullest memory pool: for a "
+        "hybrid model it can be the state slots rather than the KV cache. It is rounded to "
+        "two decimals.",
+        "trtllm": "gauges are updated only when a request completes, so the ceiling can "
+        "rest on few readings.",
+    },
+    "T14": {
+        "sglang": "checked on vLLM only.",
+        "trtllm": "checked on vLLM only.",
+    },
 }
 
 _BY_SLUG = {t.slug: t for t in TRIPWIRES.values()}

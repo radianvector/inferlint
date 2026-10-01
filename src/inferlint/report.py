@@ -19,7 +19,7 @@ from urllib.parse import quote
 
 from . import __version__, bootlog, checks
 from .blocks import predict_concurrency
-from .catalog import TRIPWIRES
+from .catalog import ENGINE_NOTES, TRIPWIRES
 from .engines import VLLM as VLLM_ENGINE
 from .engines import Engine, by_key, from_names
 from .result import CheckResult, Status
@@ -1218,11 +1218,15 @@ def _boot_table(rep: Report) -> str:
     )
 
 
-def _guide() -> str:
+def _guide(engine: Engine = VLLM_ENGINE) -> str:
+    def note(tid: str) -> str:
+        text = ENGINE_NOTES.get(tid, {}).get(engine.key)
+        return f'<p class="why">On {escape(engine.name)}: {escape(text)}</p>' if text else ""
+
     items = "".join(
         f'<li><div class="g-head"><span class="tw">{t.id}</span>{escape(t.name)}'
         f'<span class="slug">{escape(t.slug)}</span></div>'
-        f'<p>{escape(t.what)}</p><p class="why">{escape(t.why)}</p>'
+        f'<p>{escape(t.what)}</p><p class="why">{escape(t.why)}</p>{note(t.id)}'
         f"<code>{escape(t.command)}</code></li>"
         for t in TRIPWIRES.values()
     )
@@ -1273,7 +1277,7 @@ def render(rep: Report, *, standalone: bool = True) -> str:
             else ""
         )
         + _boot_table(rep)
-        + _guide()
+        + _guide(rep.engine)
         + f"<footer>Generated {escape(rep.generated)} by inferlint {escape(__version__)}. "
         "Every chart is drawn from the run's own files.</footer>"
         "</div>"
