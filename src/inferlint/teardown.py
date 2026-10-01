@@ -154,10 +154,25 @@ def _ancestors(pid: int, procs: Sequence[Proc]) -> set[int]:
 
 
 def server_processes(procs: Sequence[Proc], self_pid: int | None = None) -> list[Proc]:
-    """Server processes, never including ``self_pid`` or any of its ancestors."""
+    """Server processes and everything they started, never ``self_pid`` or its ancestors.
+
+    Descendants count because some engines hold the GPU in a process with a generic
+    name: TensorRT-LLM's model runs in ``python -m mpi4py.futures.server`` under ``prte``,
+    both started by ``trtllm-serve``.
+    """
     me = os.getpid() if self_pid is None else self_pid
     protected = _ancestors(me, procs)
-    return [p for p in procs if p.pid not in protected and is_server_process(p)]
+    found = {p.pid for p in procs if p.pid not in protected and is_server_process(p)}
+    children: dict[int, list[int]] = {}
+    for p in procs:
+        children.setdefault(p.ppid, []).append(p.pid)
+    todo = list(found)
+    while todo:
+        for child in children.get(todo.pop(), []):
+            if child not in found and child not in protected:
+                found.add(child)
+                todo.append(child)
+    return [p for p in procs if p.pid in found]
 
 
 def naive_pkill_matches(procs: Iterable[Proc], pattern: str = "vllm serve") -> list[Proc]:

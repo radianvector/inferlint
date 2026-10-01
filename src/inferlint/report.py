@@ -160,11 +160,10 @@ _TERMS = (
     ),
     (
         "Preemption",
-        "When a running request needs a block and none is free, the server evicts a "
-        "running request: it frees that request's KV blocks and later recomputes them "
-        "from the prompt and the output so far. vLLM counts it in "
-        "vllm:num_preemptions_total and writes no log line; SGLang calls it a retraction, "
-        "counts it in sglang:num_retracted_requests_total and logs a warning (T1).",
+        "When a running request needs a block and none is free, vLLM evicts a running "
+        "request: it frees that request's KV blocks and later recomputes them from the "
+        "prompt and the output so far. vLLM counts it in vllm:num_preemptions_total and "
+        "writes no log line (T1).",
     ),
     (
         "Output tokens per second",
@@ -873,12 +872,31 @@ def _happened(rep: Report) -> str:
         '<h2 id="h-happened">What happened</h2>'
         f"{lede}{_tiles(rep)}"
         f'<div class="facts">{_facts("The test", test)}{_facts("The setup", setup)}</div>'
-        f"{_terms()}</section>"
+        f"{_terms(rep.engine)}</section>"
     )
 
 
-def _terms() -> str:
-    dl = "".join(f"<dt>{escape(k)}</dt><dd>{escape(v)}</dd>" for k, v in _TERMS)
+# The same event in the other engines' words.
+_PREEMPTION_TERM = {
+    "sglang": (
+        "When the KV cache cannot hold the running requests' next tokens, SGLang retracts "
+        "a running request: it frees that request's KV and later recomputes it from the "
+        "prompt and the output so far. SGLang counts it in "
+        "sglang:num_retracted_requests_total and logs a warning (T1)."
+    ),
+    "trtllm": (
+        "With the MAX_UTILIZATION scheduler policy, TensorRT-LLM pauses a running request "
+        "when the KV cache is full and later recomputes it. It counts none, and logs each "
+        "pause at INFO; its default policy, GUARANTEED_NO_EVICT, pauses none (T1)."
+    ),
+}
+
+
+def _terms(engine: Engine = VLLM_ENGINE) -> str:
+    terms = [
+        (k, _PREEMPTION_TERM.get(engine.key, v) if k == "Preemption" else v) for k, v in _TERMS
+    ]
+    dl = "".join(f"<dt>{escape(k)}</dt><dd>{escape(v)}</dd>" for k, v in terms)
     return (
         '<details class="gloss" id="words"><summary>Words used in this report</summary>'
         f'<dl class="terms">{dl}</dl></details>'

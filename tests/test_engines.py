@@ -76,3 +76,18 @@ def test_scrape_falls_back_to_the_prometheus_path() -> None:
     assert s.metrics.total("trtllm_num_requests_running") == 3.0
     row = sample_row(parse(s.text), 0.0, None)
     assert row["running"] == 3.0 and "preemptions" not in row
+
+
+def test_a_servers_descendants_are_its_processes() -> None:
+    """TensorRT-LLM's model runs in a generically named MPI worker under trtllm-serve."""
+    from inferlint.teardown import server_processes
+
+    procs = [
+        Proc(100, 1, ("bash", "run.sh"), "bash"),  # the script that started it, and us
+        Proc(200, 100, ("/v/bin/python", "/v/bin/trtllm-serve", "serve", "m"), "trtllm-serve"),
+        Proc(300, 200, ("prte", "--singleton", "singleton.host.200.0"), "prte"),
+        Proc(400, 300, ("/v/bin/python", "-R", "-m", "mpi4py.futures.server"), "python"),
+        Proc(500, 1, ("/v/bin/python", "-R", "-m", "mpi4py.futures.server"), "python"),  # other
+        Proc(600, 100, ("python3", "-m", "inferlint.cli", "teardown"), "python3"),  # us
+    ]
+    assert [p.pid for p in server_processes(procs, self_pid=600)] == [200, 300, 400]
