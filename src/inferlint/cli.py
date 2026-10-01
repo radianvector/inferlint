@@ -13,6 +13,7 @@ that engine's.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import shutil
@@ -29,10 +30,12 @@ from typing import Any
 
 from . import (
     __version__,
+    benchresult,
     bootlog,
     checks,
     engines,
     gpu,
+    insights,
     report,
     series,
     teardown,
@@ -421,8 +424,63 @@ def _cmd_gpu_inspect(a: argparse.Namespace) -> int:
     return _emit([r], a.json, a.strict)
 
 
+def _first(folder: Path, name: str, pattern: str) -> str | None:
+    """``folder/name`` if it exists, else the first file matching ``pattern``."""
+    if (folder / name).is_file():
+        return str(folder / name)
+    found = sorted(folder.glob(pattern))
+    return str(found[0]) if found else None
+
+
+def _bench_in(folder: Path) -> str | None:
+    """The load tool's result file in a run folder: bench.json, or a JSON file like one."""
+    if (folder / "bench.json").is_file():
+        return str(folder / "bench.json")
+    for f in sorted(folder.glob("*.json")):
+        if f.name.endswith(".snapshot.json") or f.name == "results.json":
+            continue
+        try:
+            doc = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(doc, dict) and "completed" in doc and "total_output_tokens" in doc:
+            return str(f)
+    return None
+
+
+def _print_limits(found: Sequence[insights.Insight]) -> None:
+    if found:
+        print("What limited this run:")
+        for i in found:
+            print(f"  - {i.title}. {i.text}")
+
+
 def _cmd_report(a: argparse.Namespace) -> int:
-    inputs: list[str | None] = [*(a.boot_log or []), a.before, a.after, a.series]
+    run = Path(a.run) if a.run else None
+    if run is not None and not run.is_dir():
+        print(f"inferlint: {a.run} is not a folder", file=sys.stderr)
+        return 2
+    if run is None and not a.out:
+        print("inferlint: give a run folder, or -o and the files to read", file=sys.stderr)
+        return 2
+    # Files named on the command line win; the rest are found in the run folder.
+    logs: list[str] = list(a.boot_log or [])
+    if run is not None:
+        if not logs:
+            log = _first(run, "boot.log", "*boot*.log")
+            logs = [log] if log else []
+        a.before = a.before or _first(run, "before.snapshot.json", "*before*.json")
+        a.after = a.after or _first(run, "after.snapshot.json", "*after*.json")
+        a.series = a.series or _first(run, "run.series.jsonl", "*.series.jsonl")
+        a.bench_result = a.bench_result or _bench_in(run)
+        if not (logs or a.before or a.after or a.series):
+            print(
+                f"inferlint: no run files in {run} (boot.log, *.snapshot.json, *.series.jsonl)",
+                file=sys.stderr,
+            )
+            return 2
+    out = a.out or str((run or Path()) / "report.html")
+    inputs: list[str | None] = [*logs, a.before, a.after, a.series, a.bench_result]
     before = telemetry.load(a.before) if a.before else None
     after = telemetry.load(a.after) if a.after else None
     recorded = series.read(a.series) if a.series else None
@@ -431,8 +489,7 @@ def _cmd_report(a: argparse.Namespace) -> int:
     if snaps:
         found.append((_snapshot_engine(snaps), "the snapshots"))
     if recorded is not None:
-        found.append((_series_engine(recorded), a.series))
-    logs: list[str] = a.boot_log or []
+        found.append((_series_engine(recorded), str(a.series)))
     for log in logs:
         text = Path(log).read_text(encoding="utf-8", errors="replace")
         found.append((engines.from_log(text), log))
@@ -440,18 +497,36 @@ def _cmd_report(a: argparse.Namespace) -> int:
         return 2
     if found and not any(e for e, _ in found):
         _note_unknown(a, None, "no input")
+    bench = benchresult.load(a.bench_result) if a.bench_result else None
+    extra: list[CheckResult] = []
+    if bench is not None and before is not None and after is not None:
+        load_log = run / "load.log" if run is not None else None
+        untimed = 0
+        if load_log is not None and load_log.is_file():
+            untimed = xray.untimed_requests(load_log.read_text(encoding="utf-8", errors="replace"))
+        extra.append(
+            checks.check_client_server_agree(bench, before, after, expected_extra_requests=untimed)
+        )
     rep = report.build(
-        boot_logs=a.boot_log or [],
+        boot_logs=logs,
         before=before,
         after=after,
         series=recorded,
-        requested=a.requested,
+        requested=a.requested or (bench.max_concurrency if bench else None),
         title=a.title,
-        sources=[Path(p).name for p in inputs if p],
+        sources=[Path(f).name for f in inputs if f],
         engine=a.engine,
+        extra=extra,
+        bench=bench,
     )
-    _out(a.out).write_text(report.render(rep), encoding="utf-8")
-    print(f"{_counts(rep.results)} -> {a.out}")
+    _out(out).write_text(report.render(rep), encoding="utf-8")
+    if a.json:
+        print(json.dumps([r.to_json() for r in rep.results], indent=1, default=str))
+        return 0
+    for r in rep.results:
+        print(f"[{r.tripwire:>3}] {_MARK[r.status]}  {r.message}")
+    _print_limits(insights.limits(rep))
+    print(f"{_counts(rep.results)} -> {out}")
     return 0
 
 
@@ -528,9 +603,84 @@ def _cmd_probe(a: argparse.Namespace) -> int:
     return _emit([r], a.json, a.strict)
 
 
+# The commands as --help lists them, by what they are for. Each line is also the
+# command's own description.
+_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    (
+        "Run and check a benchmark",
+        (
+            (
+                "xray",
+                "start the server (optional), record it around the load command, check the "
+                "run, write report.html, stop the server",
+            ),
+        ),
+    ),
+    (
+        "Check a saved run",
+        (
+            ("report", "check a run folder or its files again: verdicts, and report.html"),
+            ("check-log", "the log-based tripwires (T4 T5 T6 T7 T11 T12) on boot logs"),
+            ("boot-facts", "what a boot log says: version, KV cache, memory, settings"),
+            ("preemption", "T1: did the server preempt between two snapshots?"),
+            ("rate", "T10: token throughput from the snapshots' own clocks"),
+            ("series", "T8 T9 T14: concurrency reached, ceiling, block count from a recording"),
+        ),
+    ),
+    (
+        "Record a server yourself",
+        (
+            ("snapshot", "save the server's metrics, with the time of the reading"),
+            ("watch", "record the running, waiting and KV-cache readings to a series file"),
+            ("probe", "T7: one request, a concurrent burst, then a health check"),
+        ),
+    ),
+    (
+        "The GPU",
+        (
+            ("gpu-inspect", "T2: which GPU this is, its memory, and whether it is free"),
+            ("teardown", "T2: stop inference servers and wait for a free card"),
+        ),
+    ),
+    ("Learn", (("explain", "what each tripwire catches, and how to check it"),)),
+)
+_HELP = {name: text for _, cmds in _GROUPS for name, text in cmds}
+
+_START = f"""inferlint checks an inference benchmark run for silent problems (tripwires).
+
+Start here:
+  inferlint xray -o run/ --serve "vllm serve MODEL" -- vllm bench serve --model MODEL ...
+      start the server, run the load, check the run, write run/report.html, stop the server
+  inferlint xray -o run/ --url http://127.0.0.1:8000 -- <load command>
+      the same, against a server that is already running
+  inferlint report run/
+      check a saved run folder again, and rewrite its report.html
+  inferlint explain T1
+      what a tripwire catches
+
+vLLM, SGLang and TensorRT-LLM are told apart from their files; to name the engine,
+set {engines.ENV_VAR} or pass --engine.
+
+Every command: inferlint --help"""
+
+
+def _commands_text() -> str:
+    lines = ["commands:"]
+    for group, cmds in _GROUPS:
+        lines.append(f"  {group}")
+        for name, text in cmds:
+            wrapped = textwrap.wrap(text, 62)
+            lines.append(f"    {name:<12} {wrapped[0]}")
+            lines += [f"    {'':<12} {w}" for w in wrapped[1:]]
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
-        prog="inferlint", description=__doc__.splitlines()[0] if __doc__ else ""
+        prog="inferlint",
+        description=__doc__.splitlines()[0] if __doc__ else "",
+        epilog=_commands_text(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     ap.add_argument("--version", action="version", version=f"inferlint {__version__}")
     common = argparse.ArgumentParser(add_help=False)
@@ -543,40 +693,42 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="{vllm,sglang,trtllm}",
         help=f"the serving engine (default: ${engines.ENV_VAR}, else told from the input)",
     )
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub = ap.add_subparsers(
+        dest="cmd", required=True, metavar="<command>", help="one of the commands below"
+    )
 
-    def add(name: str, help_: str, by_engine: bool = True) -> argparse.ArgumentParser:
+    def add(name: str, by_engine: bool = True) -> argparse.ArgumentParser:
         parents = [common, engine] if by_engine else [common]
-        return sub.add_parser(name, help=help_, parents=parents)
+        return sub.add_parser(name, description=_HELP[name], parents=parents)
 
-    p = add("boot-facts", "parse a server's boot log into structured facts")
+    p = add("boot-facts")
     p.add_argument("log")
     p.set_defaults(fn=_cmd_boot_facts)
 
-    p = add("check-log", "run the log-based tripwires (T4 T5 T6 T7 T11 T12) on boot logs")
+    p = add("check-log")
     p.add_argument("logs", nargs="+")
     p.set_defaults(fn=_cmd_check_log)
 
-    p = add("snapshot", "save a /metrics snapshot with timing")
+    p = add("snapshot")
     p.add_argument("url")
     p.add_argument("-o", "--out", required=True)
     p.set_defaults(fn=_cmd_snapshot)
 
-    p = add("watch", "sample running/waiting/KV-usage gauges to a JSONL series")
+    p = add("watch")
     p.add_argument("url")
     p.add_argument("-o", "--out", required=True)
     p.add_argument("--interval", type=float, default=0.5)
     p.add_argument("--duration", type=float, default=None, help="seconds; default until SIGTERM")
     p.set_defaults(fn=_cmd_watch)
 
-    p = add("preemption", "T1: did the server preempt between two snapshots?")
+    p = add("preemption")
     p.add_argument("before")
     p.add_argument("after")
     p.add_argument("--series", help="recording of the run, for engines that count no preemptions")
     p.add_argument("--boot-log", help="the server's boot log (its scheduler policy)")
     p.set_defaults(fn=_cmd_preemption)
 
-    p = add("rate", "T10: token throughput from the snapshots' own clocks")
+    p = add("rate")
     p.add_argument("before")
     p.add_argument("after")
     p.add_argument(
@@ -584,27 +736,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(fn=_cmd_rate)
 
-    p = add("series", "T8 T9 T14: concurrency reached, ceiling, block count from a series")
+    p = add("series")
     p.add_argument("series")
     p.add_argument("--snapshot", help="a snapshot from the same boot (for T14)")
     p.add_argument("--requested", type=int, help="client concurrency (for T8)")
     p.add_argument("--boot-log", help="boot log, to set the boot line's claim beside T8")
     p.set_defaults(fn=_cmd_series)
 
-    for name, fn, help_ in (
-        (
-            "teardown",
-            _cmd_teardown,
-            "T2: stop every inference server's processes and wait for a clear card",
-        ),
-        (
-            "gpu-inspect",
-            _cmd_gpu_inspect,
-            "T2: which GPU this is, its memory, and whether it is free (non-zero exit if not)",
-        ),
-    ):
+    for name, fn in (("teardown", _cmd_teardown), ("gpu-inspect", _cmd_gpu_inspect)):
         # gpu-inspect: the card is free only when no engine's server holds it.
-        p = add(name, help_, by_engine=name == "teardown")
+        p = add(name, by_engine=name == "teardown")
         p.add_argument("--max-used-mib", type=int, default=teardown.DEFAULT_MAX_USED_MIB)
         p.add_argument("--consecutive", type=int, default=2)
         p.add_argument("--timeout", type=float, default=120.0 if name == "teardown" else 10.0)
@@ -612,25 +753,27 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--dry-run", action="store_true", help="list targets, signal nothing")
         p.set_defaults(fn=fn)
 
-    p = add("report", "write an HTML report: verdicts, charts and boot facts for a run")
-    p.add_argument("-o", "--out", required=True, help="HTML file to write")
+    p = add("report")
+    p.add_argument(
+        "run",
+        nargs="?",
+        help="a run folder, such as xray's: its files are found by name",
+    )
+    p.add_argument("-o", "--out", help="HTML file to write (default: RUN/report.html)")
     p.add_argument("--boot-log", action="append", help="boot log (repeat for several boots)")
     p.add_argument("--before", help="snapshot taken before the run")
     p.add_argument("--after", help="snapshot taken after the run")
     p.add_argument("--series", help="gauge series recorded during the run")
-    p.add_argument("--requested", type=int, help="client concurrency")
+    p.add_argument("--bench-result", help="the load tool's result file (vllm bench serve)")
+    p.add_argument("--requested", type=int, help="client concurrency (default: the result's)")
     p.add_argument("--title", help="report title")
     p.set_defaults(fn=_cmd_report)
 
-    p = add("explain", "explain the tripwires")
+    p = add("explain")
     p.add_argument("ids", nargs="*", help="codes or names, e.g. T1 falling-ceiling; default: all")
     p.set_defaults(fn=_cmd_explain)
 
-    p = add(
-        "xray",
-        "run a benchmark end to end and check it: start the server (optional), record it "
-        "around the load command, write the report, stop the server",
-    )
+    p = add("xray")
     p.add_argument("-o", "--out", help="folder for every file of the run (default: xray-<time>)")
     p.add_argument("--serve", help='start the server with this command, e.g. "vllm serve M ..."')
     p.add_argument("--url", default="http://127.0.0.1:8000", help="the server's address")
@@ -644,7 +787,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("load", nargs=argparse.REMAINDER, help="-- the load command")
     p.set_defaults(fn=_cmd_xray)
 
-    p = add("probe", "T7: one request, a concurrent burst, then a health check", False)
+    p = add("probe", False)
     p.add_argument("url")
     p.add_argument("--model")
     p.add_argument("--concurrency", type=int, default=8)
@@ -662,7 +805,19 @@ def _engine_arg(value: str) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    a = build_parser().parse_args(argv)
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args:
+        print(_START)
+        return 0
+    if not args[0].startswith("-") and args[0] not in _HELP:
+        close = difflib.get_close_matches(args[0], list(_HELP), n=1, cutoff=0.6)
+        hint = f" Did you mean '{close[0]}'?" if close else ""
+        print(
+            f"inferlint: unknown command '{args[0]}'.{hint} 'inferlint --help' lists them.",
+            file=sys.stderr,
+        )
+        return 2
+    a = build_parser().parse_args(args)
     if hasattr(a, "engine") and a.engine is None:
         env = os.environ.get(engines.ENV_VAR, "").strip()
         if env:

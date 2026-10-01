@@ -21,6 +21,23 @@ upload dates (UTC).
 - `xray` takes the engine from the `--serve` command before it starts anything, and stops
   with the setting to change when the server serves no metrics (SGLang:
   `--enable-metrics`; TensorRT-LLM: `return_perf_metrics: true`).
+- **What limited the run.** The report opens with up to three sentences, and `xray` and
+  `report` print them at the end:
+  - whether the KV cache could hold the load at full length (concurrency × prompt and
+    output tokens, in whole blocks), and what the server did when it could not;
+  - whether requests waited to start;
+  - how much of the throughput its per-token speed allows the run reached, and how many
+    requests ran at once on average.
+
+  Each one is arithmetic on numbers the report already shows.
+- **`inferlint report RUN_FOLDER`** checks a saved run folder (such as `xray`'s) again. It
+  finds the files by name, including the load tool's result file (so T15 runs and the
+  concurrency asked for comes from it), prints the verdicts, and writes
+  `RUN_FOLDER/report.html`. The file flags still work and take precedence.
+- Report charts: the KV cache against the load, and GPU memory at start-up from the boot
+  log. A time-to-first-token tile when the load tool's result file is there.
+- `inferlint` with no arguments prints where to start; `--help` groups the commands by
+  what they are for; a mistyped command gets a suggestion.
 - T11 says which part of vLLM's memory split moved between starts, and how many starts
   compiled the model from scratch.
 
@@ -30,8 +47,17 @@ upload dates (UTC).
   it.
 - T12 names a bare `AssertionError` by its `assert` line, and a generic exception by the
   function it was raised in.
+- The report folds passed checks, and the guide to the tripwires, under one line each;
+  failures and warnings are shown in full.
+- The output-tokens-per-second tile says that the server's count includes idle time
+  before and after the load, and gives the load tool's figure beside it.
 
 ### Fixed
+
+- No output-tokens-per-second chart for SGLang and TensorRT-LLM: they add a request's
+  tokens to their counter only when it finishes, so the chart showed completions, not
+  generation (3 counter changes in 193 readings of a 32-request SGLang run, and in 126
+  on TensorRT-LLM). The report says why the chart is missing.
 
 - T12 no longer reports tracebacks the server says it ignores, or errors logged before
   the server became ready, as a failed start; T7 no longer reports an error after which

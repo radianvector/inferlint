@@ -98,6 +98,13 @@ updated only when a request completes. When requests finish together, a recordin
 little until the end; T8 says "can't tell" for a shortfall it may have missed, and T9
 says how many readings it rests on.
 
+**T10 and the report's tokens-per-second chart.** SGLang and TensorRT-LLM add a
+request's generated tokens to their counter only when the request finishes: in a
+32-request run the counter moved 3 times in 193 readings on SGLang and 3 times in 126 on
+TensorRT-LLM, against 89 times in 137 on vLLM. A rate between two readings taken before and after the load (T10) is right; a rate
+over a one-second window during the load shows completions, so the report leaves that
+chart out for these two engines and says why.
+
 **T9.** SGLang's usage gauge is its fullest memory pool, which for a hybrid model can be
 the state slots rather than the KV cache.
 

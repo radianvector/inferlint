@@ -90,8 +90,10 @@ def test_fragment_has_no_document_skeleton() -> None:
 
 def test_charts_and_tables_present() -> None:
     html = report.render(live_report())
-    assert html.count("<figure") == 4
-    assert html.count("<details>") == 4  # every chart has a data table
+    figures = re.findall(r'<figure class="chart" id="([^"]+)"', html)
+    # a hybrid model: no cache-against-load chart, whose token arithmetic does not apply
+    assert figures == ["fig-requests", "fig-kv", "fig-tput", "fig-levels", "fig-memory"]
+    assert html.count("<details>") == 5  # every chart has a data table
     assert html.count('class="chart-data"') == 3  # time charts carry hover data
 
 
@@ -187,7 +189,8 @@ def test_restart_between_readings_drops_the_counts() -> None:
 
 def test_glossaries_explain_every_result_and_the_terms() -> None:
     html = report.render(live_report())
-    assert html.count('<details class="gloss"') == 2
+    # the words, the verdicts' meanings, and the folded tripwire guide
+    assert html.count('<details class="gloss"') == 3
     table = html.split('<table class="meanings">', 1)[1].split("</table>", 1)[0]
     for label in ("Tripwire failed", "Warning", "Can't tell", "Pass"):
         assert f"</svg>{label}</span>" in table

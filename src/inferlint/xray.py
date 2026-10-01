@@ -12,7 +12,8 @@ It does in order what the separate commands do one at a time:
 4. Check the run (T1, T8, T9, T10, T14, and T15 when the load tool saved a result file).
 5. With ``serve``: stop every server process and wait for a free GPU (T2), even when an
    earlier step failed or the run was interrupted.
-6. Write ``report.html`` and ``results.json``.
+6. Say what limited the run (see ``insights``), and write ``report.html`` and
+   ``results.json``.
 
 Everything lands in one folder, so the run can be checked again later with the
 separate commands.
@@ -36,7 +37,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import cast
 
-from . import benchresult, bootlog, checks, engines, report, series, teardown, telemetry
+from . import benchresult, bootlog, checks, engines, insights, report, series, teardown, telemetry
 from .probe import probe
 from .result import LABELS, CheckResult, Status
 
@@ -81,6 +82,7 @@ class Outcome:
     report: Path | None = None
     problem: str | None = None  # why the run stopped early, if it did
     interrupted: bool = False
+    limits: list[insights.Insight] = field(default_factory=list[insights.Insight])
 
 
 @dataclass
@@ -342,8 +344,14 @@ def run(plan: Plan, say: Callable[[str], None] = print) -> Outcome:
     if o.problem:
         say(o.problem)
     if st.boot_log is not None or (st.before is not None and st.after is not None):
+        rep = _report(plan, o, st)
+        o.limits = insights.limits(rep)
+        if o.limits:
+            say("== what limited this run")
+            for i in o.limits:
+                say(f"- {i.title}. {i.text}")
         o.report = plan.out / "report.html"
-        o.report.write_text(report.render(_report(plan, o, st)), encoding="utf-8")
+        o.report.write_text(report.render(rep), encoding="utf-8")
     (plan.out / "results.json").write_text(
         json.dumps([r.to_json() for r in o.results], indent=1, default=str), encoding="utf-8"
     )
@@ -496,6 +504,7 @@ def _report(plan: Plan, o: Outcome, st: _Run) -> report.Report:
         extra=[r for r in o.results if r.tripwire in ("T2", "T7", "T15")],
         server_version=st.facts.server_version if st.facts is not None else None,
         engine=st.engine.key if st.engine is not None else None,
+        bench=st.bench,
     )
 
 

@@ -298,8 +298,10 @@ def render_bars(c: BarChart) -> str:
             f'<text class="tick" x="{x}" y="{h - bottom + 20}" text-anchor="middle">'
             f"{escape(c.tick_fmt(t))}</text>"
         )
+    # After the last tick's label, which is centred on x_right: about 6.5 px a character.
+    unit_x = x_right + 3.3 * len(c.tick_fmt(xt[-1])) + 8
     o.append(
-        f'<text class="tick unit" x="{x_right + 14}" y="{h - bottom + 20}">{escape(c.unit)}</text>'
+        f'<text class="tick unit" x="{_num(unit_x)}" y="{h - bottom + 20}">{escape(c.unit)}</text>'
     )
     r = 4.0
     for i, b in enumerate(c.bars):

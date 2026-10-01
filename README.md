@@ -75,6 +75,10 @@ shortened, the benchmark's own output left out):
 [T15] PASS  client and server agree: 32 requests, 32,000 output tokens
 == stop the server
 [ T2] PASS  2 consecutive clear readings
+== what limited this run
+- The server ran fewer requests at once than the load sent. The load kept 32 requests open, but the server ran at most 10 at once. It also preempted 21 running requests.
+- Requests waited long to start. Half the requests waited more than 28.9 s for their first token, the slowest (p99) 73.4 s, most of it in the queue.
+- The run reached 26% of its pace. A running request got a token every 25.1 ms, so 32 at once could produce about 1,273 tokens/s. The run averaged 336, 26% of that: on average 8 requests ran at once, not 32.
 12 checks (8 pass, 2 warn, 2 tripwire-failed)
 report: run/report.html
 files:  run
@@ -82,15 +86,18 @@ files:  run
 
 `xray` checks that the GPU is free, starts the server and saves its boot log, sends 9
 probe requests, records the server's counters and gauges around the load command after
-`--`, runs every tripwire that applies, and writes `run/report.html` and
-`run/results.json`. It always stops the server at the end, also after a failure or
-Ctrl-C. Without `--serve` it attaches to a server that is already running (`--url`,
+`--`, runs every tripwire that applies, says what limited the run, and writes
+`run/report.html` and `run/results.json`. It always stops the server at the end, also
+after a failure or Ctrl-C. Without `--serve` it attaches to a server that is already running (`--url`,
 `--boot-log`). Exit status: 0 when every tripwire passed, 1 when one failed or the run did
 not complete, 2 when one could not decide.
 
 For `vllm bench serve`, `xray` adds `--save-result` and compares the benchmark's own
 counts with the server's (T15), and reads `--max-concurrency` as the concurrency asked
 for (T8).
+
+To check the folder again later, on any computer: `inferlint report run/`. It finds the
+files by name, prints the verdicts, and rewrites `run/report.html`.
 
 ## One run, measured
 
@@ -277,12 +284,16 @@ warnings.
 
 ### The report
 
-`inferlint report` turns a run's files into one HTML page. It opens with a plain-English
-account of what happened (how long the test ran, requests finished and failed, tokens
-generated, time spent queued, which tripwires were checked and which need other
-files), then the verdicts, charts of what the server did over time, the boot facts, and
-a guide to every tripwire. Two collapsible glossaries explain the terms (token, KV
-pool, block, preemption) and what Pass, Warning, Tripwire failed and Can't tell mean.
+`inferlint report` turns a run's files into one HTML page. It opens with what limited
+the run, in up to three sentences: whether the KV cache could hold the load, whether
+requests waited to start, and how much of the throughput its per-token speed allows the
+run reached. Then a plain-English account of what happened (how long the test ran,
+requests finished and failed, tokens generated, time spent queued, which tripwires were
+checked and which need other files), the verdicts, with passed checks folded under one
+line, charts of what the server did over time and of its KV cache against the load, the
+boot facts and GPU memory, and a guide to every tripwire. Collapsible glossaries explain
+the terms (token, KV pool, block, preemption) and what Pass, Warning, Tripwire failed and
+Can't tell mean.
 
 The page fetches nothing, so it opens offline and can be attached to a ticket as it is.
 It has a light/dark switch, every chart has a data table, and hovering (or the arrow
@@ -290,7 +301,7 @@ keys) reads values at any moment.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/radianvector/inferlint/main/docs/report-dark.png">
-  <img alt="The report for the live run: what happened, the headline numbers, 2 failed tripwires and 2 warnings" src="https://raw.githubusercontent.com/radianvector/inferlint/main/docs/report.png">
+  <img alt="The report for the live run: what limited it, what happened, the headline numbers, 2 failed tripwires and 2 warnings" src="https://raw.githubusercontent.com/radianvector/inferlint/main/docs/report.png">
 </picture>
 
 **See a full example.**
@@ -304,11 +315,8 @@ Download the repository for its files, and make the report yourself:
 ```bash
 git clone https://github.com/radianvector/inferlint
 cd inferlint
-inferlint report -o example-report.html --title "vLLM 0.28 on an RTX 4090" --requested 32 \
-    --boot-log tests/fixtures/vllm-0.28/live/boot.log \
-    --before tests/fixtures/vllm-0.28/live/before.snapshot.json \
-    --after tests/fixtures/vllm-0.28/live/after.snapshot.json \
-    --series tests/fixtures/vllm-0.28/live/run.series.jsonl
+inferlint report tests/fixtures/vllm-0.28/live --requested 32 \
+    --title "vLLM 0.28 on an RTX 4090" -o example-report.html
 ```
 
 ## Use it from Python

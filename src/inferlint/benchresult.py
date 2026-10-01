@@ -2,7 +2,8 @@
 
 ``vllm bench serve --save-result`` writes one JSON document per run. inferlint reads the
 counts it needs to compare the client's view with the server's (T15) and the concurrency
-the client asked for (T8). Every field is None when the file does not have it.
+the client asked for (T8), and the latencies the client measured, which the report uses to
+say what limited the run. Every field is None when the file does not have it.
 """
 
 from __future__ import annotations
@@ -27,6 +28,11 @@ class BenchResult:
     max_concurrency: int | None = None
     num_prompts: int | None = None
     backend: str | None = None
+    # client-side latencies, in milliseconds
+    mean_ttft_ms: float | None = None
+    median_ttft_ms: float | None = None
+    p99_ttft_ms: float | None = None
+    mean_tpot_ms: float | None = None
 
 
 def _int(doc: dict[str, Any], key: str) -> int | None:
@@ -52,6 +58,10 @@ def parse(doc: dict[str, Any], path: str = "") -> BenchResult:
         max_concurrency=_int(doc, "max_concurrency"),
         num_prompts=_int(doc, "num_prompts"),
         backend=backend if isinstance(backend, str) else None,
+        mean_ttft_ms=_float(doc, "mean_ttft_ms"),
+        median_ttft_ms=_float(doc, "median_ttft_ms"),
+        p99_ttft_ms=_float(doc, "p99_ttft_ms"),
+        mean_tpot_ms=_float(doc, "mean_tpot_ms"),
     )
 
 

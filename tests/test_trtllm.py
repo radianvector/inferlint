@@ -105,7 +105,11 @@ def test_report() -> None:
     assert "T14 (does not apply to TensorRT-LLM)" in html
     assert "On TensorRT-LLM: a request is paused for recompute" in html
     assert "On SGLang" not in html
-    assert html.count("updates these readings only when a request completes") == 3  # charts
+    # the requests and KV charts; no tokens-per-second chart, since the counter moves on
+    # completion only (3 changes in 126 readings)
+    assert html.count("updates these readings only when a request completes") == 2
+    assert 'id="fig-tput"' not in html
+    assert "No output-tokens-per-second chart: TensorRT-LLM adds a request's tokens" in html
 
 
 def test_pauses_are_counted_from_the_log() -> None:

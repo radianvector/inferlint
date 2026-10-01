@@ -142,6 +142,8 @@ def test_report() -> None:
     assert "SGLang 0.5.20" in html and "<dt>SGLang</dt><dd>0.5.20</dd>" in html
     assert "On SGLang: called a retraction" in html and "On TensorRT-LLM" not in html
     assert "updates these readings only when" not in html
+    # its token counter moved 3 times in 193 readings, on completions: no tokens/s chart
+    assert 'id="fig-tput"' not in html and "No output-tokens-per-second chart: SGLang" in html
 
 
 def test_processes() -> None:

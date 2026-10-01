@@ -54,6 +54,8 @@ class Engine:
     gauges_lag: bool = False
     # What to change when the server serves no Prometheus metrics.
     metrics_hint: str = ""
+    # Does its generated-token counter count a request's tokens only when it finishes?
+    tokens_at_finish: bool = False
 
     def witness(self, counter: str) -> str | None:
         return dict(self.witnesses).get(counter)
@@ -83,6 +85,8 @@ SGLANG = Engine(
     # "KV cache pool is full. Retract requests. #retracted_reqs: N" (WARNING)
     logs_preemptions=True,
     metrics_hint="start SGLang with --enable-metrics",
+    # 0.5.20: 3 changes of sglang:generation_tokens_total in 193 readings of a 32-request run
+    tokens_at_finish=True,
 )
 TRTLLM = Engine(
     key="trtllm",
@@ -100,6 +104,7 @@ TRTLLM = Engine(
     gauges_lag=True,
     metrics_hint="put 'return_perf_metrics: true' in the YAML file given to trtllm-serve "
     "--config; it then serves them at /prometheus/metrics",
+    tokens_at_finish=True,  # 1.3.0rc29: trtllm_generation_tokens_total moves on completion
 )
 ENGINES: tuple[Engine, ...] = (VLLM, SGLANG, TRTLLM)
 

@@ -17,7 +17,8 @@ from importlib import resources
 from pathlib import Path
 from urllib.parse import quote
 
-from . import __version__, bootlog, checks
+from . import __version__, bootlog, checks, insights
+from .benchresult import BenchResult
 from .blocks import predict_concurrency
 from .catalog import ENGINE_NOTES, TRIPWIRES
 from .engines import VLLM as VLLM_ENGINE
@@ -260,6 +261,7 @@ class Report:
     summary: Summary = field(default_factory=Summary)
     sources: list[str] = field(default_factory=list[str])
     engine: Engine = VLLM_ENGINE
+    bench: BenchResult | None = None  # the load tool's result file, when there is one
 
     def result(self, tripwire: str) -> CheckResult | None:
         return next((r for r in self.results if r.tripwire == tripwire), None)
@@ -277,6 +279,7 @@ def build(
     extra: Sequence[CheckResult] = (),
     server_version: str | None = None,
     engine: str | None = None,
+    bench: BenchResult | None = None,
 ) -> Report:
     """Run every tripwire the given files allow and collect the results.
 
@@ -284,7 +287,8 @@ def build(
     results the files cannot give, from a live run: the probe (T7), the teardown (T2) and
     the client/server comparison (T15). ``server_version`` is the version the live
     server reported, for engines whose boot log does not print it. ``engine`` is the
-    engine the user named, for files that do not say which engine wrote them.
+    engine the user named, for files that do not say which engine wrote them. ``bench``
+    is the load tool's result file; its latencies feed "What limited this run".
     """
     results: list[CheckResult] = []
     boots: list[tuple[str, bootlog.BootFacts]] = []
@@ -342,6 +346,7 @@ def build(
         generated=now,
         summary=summary,
         sources=list(sources),
+        bench=bench,
     )
 
 
@@ -654,7 +659,24 @@ def _tiles(rep: Report) -> str:
         sub = f"over {float(t10.evidence['span_s']):.1f} s"
         if isinstance(err, float):
             sub += f"; a whole-second timer reads {err:+.2%}"
+        b = rep.bench
+        if b is not None and b.output_throughput and b.duration_s:
+            sub = (
+                f"server's count over {float(t10.evidence['span_s']):.1f} s, idle time "
+                f"included; the load tool measured {b.output_throughput:,.1f} over its "
+                f"{b.duration_s:.1f} s"
+            )
         tiles.append(_tile("Output tokens per second", _fmt_n(rate, 1), sub, None))
+    b = rep.bench
+    if b is not None and b.median_ttft_ms is not None and b.p99_ttft_ms is not None:
+        tiles.append(
+            _tile(
+                "Time to first token, median",
+                _ms(b.median_ttft_ms),
+                f"p99 {_ms(b.p99_ttft_ms)}; as the load tool measured it, queueing included",
+                None,
+            )
+        )
     t14 = rep.result("T14")
     if t14 is not None and t14.evidence.get("inferred_usable_blocks"):
         u = t14.evidence["inferred_usable_blocks"]
@@ -678,21 +700,37 @@ def _tile(label: str, value: str, sub: str, status: Status | None) -> str:
     )
 
 
+def _finding(r: CheckResult) -> str:
+    tw = TRIPWIRES.get(r.tripwire)
+    name = tw.name if tw else r.tripwire
+    what = f'<p class="what">{escape(tw.why)}</p>' if tw and r.status is not Status.PASS else ""
+    return (
+        f'<li class="finding {r.status.value}">'
+        f'<div class="f-status">{_pill(r.status)}</div>'
+        f'<div class="f-body"><div class="f-title"><span class="tw">{escape(r.tripwire)}</span>'
+        f"{escape(name)}</div>"
+        f'<p class="msg">{escape(r.message)}</p>{what}</div>'
+        f"</li>"
+    )
+
+
 def _findings(rep: Report) -> str:
-    rows: list[str] = []
-    for r in sorted(rep.results, key=lambda r: (_ORDER[r.status], _tw_num(r.tripwire))):
-        tw = TRIPWIRES.get(r.tripwire)
-        name = tw.name if tw else r.tripwire
-        what = f'<p class="what">{escape(tw.why)}</p>' if tw and r.status is not Status.PASS else ""
-        rows.append(
-            f'<li class="finding {r.status.value}">'
-            f'<div class="f-status">{_pill(r.status)}</div>'
-            f'<div class="f-body"><div class="f-title"><span class="tw">{escape(r.tripwire)}</span>'
-            f"{escape(name)}</div>"
-            f'<p class="msg">{escape(r.message)}</p>{what}</div>'
-            f"</li>"
+    """Failures, warnings and unknowns in full; passed checks folded under one line."""
+    ordered = sorted(rep.results, key=lambda r: (_ORDER[r.status], _tw_num(r.tripwire)))
+    shown = [r for r in ordered if r.status is not Status.PASS]
+    passed = [r for r in ordered if r.status is Status.PASS]
+    out = f'<ol class="findings">{"".join(_finding(r) for r in shown)}</ol>' if shown else ""
+    if passed:
+        label = f"{len(passed)} passed" if shown else f"All {len(passed)} checks passed"
+        out += (
+            f'<details class="gloss passed"><summary>{label}</summary>'
+            f'<ol class="findings">{"".join(_finding(r) for r in passed)}</ol></details>'
         )
-    return f'<ol class="findings">{"".join(rows)}</ol>'
+    return out
+
+
+def _ms(v: float) -> str:
+    return f"{v / 1000:,.1f} s" if v >= 1000 else f"{v:,.0f} ms"
 
 
 def _tw_num(tw: str) -> int:
@@ -1054,7 +1092,9 @@ def _charts(rep: Report) -> str:
         )
     )
 
-    tput = _throughput(s, xs)
+    # An engine that counts a request's tokens when it finishes draws completions here,
+    # not generation; the section says why the chart is missing (_tput_note).
+    tput = [] if rep.engine.tokens_at_finish else _throughput(s, xs)
     if any(v is not None for v in tput):
         svg = render_time(
             TimeChart(
@@ -1110,6 +1150,111 @@ def _charts(rep: Report) -> str:
         )
 
     return "".join(figs)
+
+
+def _tput_note(rep: Report) -> str:
+    if not rep.engine.tokens_at_finish or rep.series is None or len(rep.series.samples) < 2:
+        return ""
+    name = escape(rep.engine.name)
+    return (
+        '<p class="note">'
+        f"No output-tokens-per-second chart: {name} adds a request's tokens to "
+        "its counter when the request finishes, so readings during the run show completions, "
+        "not generation. The load tool's figure and T10 cover the whole run.</p>"
+    )
+
+
+def _limits(rep: Report) -> str:
+    found = insights.limits(rep)
+    if not found:
+        return ""
+    items = "".join(
+        f'<li class="limit {i.tone}"><div class="l-title">{escape(i.title)}</div>'
+        f"<p>{escape(i.text)}</p></li>"
+        for i in found
+    )
+    return (
+        '<section class="limits" aria-labelledby="h-limits">'
+        '<h2 id="h-limits">What limited this run</h2>'
+        f'<ul class="limit-list">{items}</ul></section>'
+    )
+
+
+def _cache_chart(rep: Report) -> str:
+    need = insights.cache_need(rep)
+    if need is None:
+        return ""
+    pool, per, n, total = need.pool, need.per_request, need.concurrency, need.total
+    load = f"{n} requests at full length"
+    bars = [
+        Bar("KV cache", float(pool), f"the cache holds {pool:,} tokens"),
+        Bar(load, total, f"{n} x {need.allocated:,.0f} tokens = {total:,.0f}"),
+    ]
+    svg = render_bars(
+        BarChart(
+            "cache",
+            bars,
+            "tokens",
+            fmt=lambda v: f"{v:,.0f}",
+            aria="Tokens the KV cache holds, and tokens the load needs",
+            label_width=190,
+        )
+    )
+    fit = (
+        f" {int(pool // need.allocated)} of them fit."
+        if total > pool
+        else f" The cache has {pool - total:,.0f} tokens to spare."
+    )
+    rounded = (
+        f", {need.allocated:,.0f} in whole {need.block}-token blocks"
+        if need.block and need.allocated != per
+        else ""
+    )
+    cap = (
+        f"Each request holds its prompt and its output so far: about {per:,.0f} tokens at the "
+        f"end{rounded}. All {n} at the end of their output need {total:,.0f}." + fit
+    )
+    rows = [["KV cache", f"{pool:,}"], [load, f"{total:,.0f}"]]
+    return _figure(
+        "fig-cache",
+        "The KV cache and the load",
+        escape(cap),
+        svg,
+        "",
+        _table(["", "tokens"], rows),
+    )
+
+
+def _memory_chart(f: bootlog.BootFacts) -> str:
+    parts = [
+        ("Model weights", f.model_load_gib),
+        ("KV cache", f.available_kv_cache_gib),
+        ("CUDA graphs", f.cudagraph_actual_gib),
+        ("Activation peak", f.peak_activation_gib),
+    ]
+    known = [(k, v) for k, v in parts if v]
+    if len(known) < 2:
+        return ""
+    bars = [Bar(k, float(v), f"{k}: {v:g} GiB") for k, v in known]
+    svg = render_bars(
+        BarChart(
+            "memory",
+            bars,
+            "GiB",
+            fmt=lambda v: f"{v:,.2f} GiB",
+            aria="GPU memory per part, from the boot log",
+            label_width=150,
+        )
+    )
+    return _figure(
+        "fig-memory",
+        "GPU memory at start-up",
+        "What the boot log says each part took. The KV cache gets what the engine's memory "
+        "setting leaves after the others, so a change in any of them changes it (T4, T11).",
+        svg,
+        "",
+        _table(["part", "GiB"], [[k, f"{v:g}"] for k, v in known]),
+    )
 
 
 def _pools_chart(rep: Report) -> str:
@@ -1226,7 +1371,8 @@ def _boot_table(rep: Report) -> str:
     return (
         f'<section class="boot"><h2>The server that ran</h2>'
         f'<p class="note">From <code>{escape(name)}</code>. Every result should carry these, '
-        f"because they change from one start to the next.</p><dl>{dl}</dl></section>"
+        f"because they change from one start to the next.</p><dl>{dl}</dl>"
+        f"{_memory_chart(f)}</section>"
     )
 
 
@@ -1242,11 +1388,13 @@ def _guide(engine: Engine = VLLM_ENGINE) -> str:
         f"<code>{escape(t.command)}</code></li>"
         for t in TRIPWIRES.values()
     )
+    # Reference text, the same in every report: folded, one line until opened.
     return (
         f'<section class="guide" id="guide"><h2>The {len(TRIPWIRES)} tripwires</h2>'
-        '<p class="note">Each one is a way an inference benchmark can report a wrong '
-        "number without raising an error.</p>"
-        f'<ol class="g-list">{items}</ol></section>'
+        '<details class="gloss"><summary>What each one catches, and how to check it</summary>'
+        '<div class="g-body"><p class="note">Each one is a way an inference benchmark can '
+        "report a wrong number without raising an error.</p>"
+        f'<ol class="g-list">{items}</ol></div></details></section>'
     )
 
 
@@ -1271,7 +1419,7 @@ def render(rep: Report, *, standalone: bool = True) -> str:
     meta_html = " · ".join(escape(m) for m in meta)
     note = bootlog.untested_version(boot) if boot is not None else None
     note_html = f'<p class="version-note">{escape(note)}</p>' if note else ""
-    charts = _charts(rep) + _pools_chart(rep)
+    charts = _cache_chart(rep) + _charts(rep) + _pools_chart(rep)
     logo = _LOGO.replace("<svg ", '<svg class="logo" aria-hidden="true" ', 1)
     body = (
         '<div class="page">'
@@ -1279,12 +1427,13 @@ def render(rep: Report, *, standalone: bool = True) -> str:
         f'<div class="brand">{logo}inferlint</div>{_theme_toggle()}</div>'
         f"<h1>{escape(rep.title)}</h1>"
         f'<p class="meta">{meta_html}</p>{note_html}</header>'
-        f"{_happened(rep)}"
+        f"{_limits(rep)}{_happened(rep)}"
         '<section class="results" aria-labelledby="h-results">'
         f'<h2 id="h-results">Results</h2>{_verdict(rep)}{_status_note(rep)}'
         f"{_status_glossary()}{_findings(rep)}</section>"
         + (
-            f'<section class="charts"><h2>What the server did</h2>{charts}</section>'
+            f'<section class="charts"><h2>What the server did</h2>{_tput_note(rep)}{charts}'
+            "</section>"
             if charts
             else ""
         )

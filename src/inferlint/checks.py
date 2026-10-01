@@ -30,6 +30,7 @@ __all__ = [
     "check_same_pool",
     "concurrency_ceiling",
     "precise_rate",
+    "running_cap",
     "with_timer_comparison",
 ]
 
@@ -464,7 +465,7 @@ def check_concurrency_reached(
             f"; admission control (--max-num-queued-reqs {limit}) kept at most {limit} in "
             f"flight, so the other {requested - limit} were rejected, not queued"
         )
-    run_cap = _running_cap(facts)
+    run_cap = running_cap(facts)
     if run_cap is not None:
         n, why = run_cap
         ev["running_cap"] = n
@@ -473,7 +474,7 @@ def check_concurrency_reached(
     return CheckResult("T8", Status.FAIL, msg, ev)
 
 
-def _running_cap(facts: BootFacts | None) -> tuple[int, str] | None:
+def running_cap(facts: BootFacts | None) -> tuple[int, str] | None:
     """The most requests the server runs at once by its own setting, and how it was set."""
     if facts is None:
         return None
