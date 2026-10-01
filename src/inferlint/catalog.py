@@ -1,19 +1,27 @@
-"""Every tripwire in plain words: what goes wrong, why it matters, how to check.
+"""Every tripwire: what goes wrong, why it changes results, and how to check for it.
 
 Used by ``inferlint explain`` and by the HTML report, so the explanation a reader sees is the
-same everywhere.
+same everywhere. The wording is technical: the precise term first, then a short gloss. The
+tutorial on the documentation site explains the same ideas in plainer words.
+
+Each tripwire has a stable code (T1-T15, in the order they were found) and a name for
+people (``silent-preemption``); ``inferlint explain`` accepts either.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ["TRIPWIRES", "Tripwire"]
+__all__ = ["TRIPWIRES", "Tripwire", "lookup"]
+
+# vLLM releases the version-specific statements below were verified on.
+VERIFIED = "verified on vLLM 0.28, 0.29 and 0.30"
 
 
 @dataclass(frozen=True)
 class Tripwire:
     id: str
+    slug: str
     name: str
     what: str
     why: str
@@ -25,132 +33,176 @@ TRIPWIRES: dict[str, Tripwire] = {
     for t in (
         Tripwire(
             "T1",
+            "silent-preemption",
             "Silent preemption",
-            "When the GPU memory that holds requests in progress (the KV cache) fills up, "
-            "vLLM pauses a request and throws away its working notes. Before the request "
-            "can continue, it has to re-read everything so far to rebuild them. vLLM "
-            "writes nothing in its log when this happens. Only a counter moves.",
-            "Each paused request waits and then repeats work, so it finishes later than it "
-            "should. Timing results include this hidden delay, and long requests suffer "
-            "most. Searching the log for it finds nothing, even when it happened.",
+            "When the KV cache has no free block for a running request, vLLM preempts a "
+            "request: it frees that request's KV blocks and later recomputes them from the "
+            "prompt and the output so far. vLLM increments vllm:num_preemptions_total and "
+            f"writes no log line at the default log level ({VERIFIED}).",
+            "A preempted request waits in the queue again and repeats work, so latency and "
+            "throughput include recomputation the client never sees. Searching the server "
+            "log finds nothing.",
             "inferlint preemption before.json after.json",
         ),
         Tripwire(
             "T2",
-            "Engine left running",
-            'The usual way to stop vLLM, pkill -f "vllm serve", only reaches the front-end '
-            "process. The engine process, which holds the model in GPU memory, renames "
-            "itself VLLM::EngineCore and can keep running after the front end is gone.",
-            "The next test starts on a GPU that is already mostly full and produces wrong "
-            "numbers with no error. One low memory reading is not proof the GPU is free.",
+            "orphaned-engine",
+            "Orphaned engine process",
+            'pkill -f "vllm serve" matches only the API-server process. The engine process, '
+            "which holds the weights and the KV cache in GPU memory, renames itself "
+            "VLLM::EngineCore and can outlive its parent when the parent is killed.",
+            "The next server starts in whatever GPU memory is left and sizes a smaller KV "
+            "pool, with no error. One low memory reading is not proof the GPU is free, so "
+            "inferlint waits for two in a row.",
             "inferlint teardown  |  inferlint gpu-inspect",
         ),
         Tripwire(
             "T3",
-            "Cleanup kills itself",
-            'Running pkill -f "vllm serve" inside a one-line shell command also kills that '
-            "shell, because the shell's own command line contains the same words.",
-            "The rest of the cleanup never runs and the script ends with no message.",
+            "cleanup-self-kill",
+            "Cleanup kills its own shell",
+            'pkill -f "vllm serve" inside a bash -c one-liner also matches that shell, '
+            "because the shell's own command line contains the pattern.",
+            "The shell is killed before the rest of the cleanup runs, and the script ends "
+            "without an error message.",
             "inferlint teardown",
         ),
         Tripwire(
             "T4",
-            "Memory pool changes between starts",
-            "Each time vLLM starts, it measures free memory and sets aside a pool for "
-            "requests in progress. The same settings can get a different pool on the next "
-            "start, and pool sizes come in fixed steps.",
-            "Two runs with identical settings can differ by a whole step (9.4% in the "
-            "recorded example), which looks like a real speed difference and is not one.",
+            "pool-size-jump",
+            "KV pool size jumps between starts",
+            "vLLM sizes the KV pool at each start from the GPU memory left after loading "
+            "the model and capturing CUDA graphs, and the pool comes in discrete steps. "
+            "Starts with identical flags can land on different steps; T11 is the cause.",
+            "Two runs with the same flags can differ by a whole step (9.4% in the recorded "
+            "example), which reads as a performance difference and is not one.",
             "inferlint check-log boot1.log boot2.log",
         ),
         Tripwire(
             "T5",
-            "Large memory blocks",
-            "Models that mix attention layers with Mamba layers make vLLM hand out cache "
-            "memory in large blocks, hundreds of tokens each, instead of 16-token blocks.",
-            "A short request still occupies a whole block, so far fewer requests fit than "
-            "the pool's token count suggests.",
+            "large-kv-blocks",
+            "Large KV block size",
+            "For hybrid attention/Mamba models, vLLM raises the attention block size (the KV "
+            "cache allocation unit) from 16 tokens to hundreds, so that attention pages and "
+            "Mamba state pages line up.",
+            "Every request holds whole blocks, so a short request occupies a full block and "
+            "far fewer requests fit than the pool's token count suggests.",
             "inferlint check-log boot.log",
         ),
         Tripwire(
             "T6",
-            "Requested backend ignored",
-            "The attention backend is the code that does the model's main calculation on "
-            "the GPU. vLLM has several, such as FlashAttention, FlashInfer and Triton, and "
-            "you can choose one when you start the server with --attention-backend. This "
-            "checks that vLLM really used the one you asked for. With speculative decoding "
-            "on, the small draft model that helps the main model picks its own backend and "
-            "quietly ignores your choice.",
-            "In the recorded case Triton was requested, but the draft model picked "
-            "FlashInfer, which crashed on the first request, while the log showed Triton "
-            "in use.",
+            "backend-ignored",
+            "Requested attention backend ignored",
+            "--attention-backend sets the target model's attention backend. With speculative "
+            "decoding, the draft model selects its own backend from a candidate list and "
+            "does not apply the flag.",
+            "In the recorded case Triton was requested and logged for the target model, but "
+            "the draft model selected FlashInfer, which failed on the first request.",
             "inferlint check-log boot.log",
         ),
         Tripwire(
             "T7",
-            "Ready, then crashes",
-            "A server can start, announce that it is ready, and crash as soon as the first "
-            "real request arrives.",
-            "A check that only waits for 'ready' passes a server that cannot serve anything.",
+            "crash-after-ready",
+            "Crash after ready",
+            "A server can log 'Application startup complete' and then fail on its first "
+            "request, when a code path start-up never ran is reached (for example a kernel "
+            "compiled on first use).",
+            "A gate that only waits for readiness passes a server that cannot serve. "
+            "inferlint probe sends real requests; inferlint check-log reports T7 when the "
+            "log shows a failure after ready.",
             "inferlint probe http://127.0.0.1:8000",
         ),
         Tripwire(
             "T8",
-            "Fewer users than requested",
-            "A load tool can keep 32 requests open, but the server may only work on a few "
-            "at a time and queue the rest.",
-            "A result labelled '32 users' can describe a 10-user server.",
+            "concurrency-not-reached",
+            "Concurrency not reached",
+            "A load tool's concurrency is the number of requests it keeps open. "
+            "vllm:num_requests_running is the number the scheduler actually runs; the rest "
+            "wait in its queue. Admission-control limits (--max-num-queued-reqs, "
+            "--max-num-queued-tokens, vLLM 0.29 and later) can also reject requests.",
+            "A result labelled 'concurrency 32' can describe a server that never ran more "
+            "than 10 requests at once.",
             "inferlint series run.series.jsonl --requested 32",
         ),
         Tripwire(
             "T9",
-            "Capacity shrinks as answers grow",
-            "The number of requests that fit at once is 1 divided by the share of cache one "
-            "request holds. Each answer takes more cache as it gets longer, so fewer fit "
-            "as a run goes on, and the server evicts some to make room.",
-            "A run has no single 'maximum concurrency'. It changes while the run is going, "
-            "and every drop causes preemptions (T1).",
+            "falling-ceiling",
+            "Concurrency ceiling falls as sequences grow",
+            "With the KV cache full, the number of requests that fit is floor(1 / share), "
+            "where share is the fraction of the cache one running request holds. The share "
+            "grows with sequence length, so the ceiling falls during a run, and each fall "
+            "preempts requests (T1).",
+            "A run has no single maximum concurrency, so one figure for it describes none "
+            "of the run.",
             "inferlint series run.series.jsonl",
         ),
         Tripwire(
             "T10",
-            "Whole-second timers",
-            "Timing a run with whole seconds, such as $(date +%s), can be off by almost a "
-            "second either way.",
-            "On a 30-second test that is about 3%, enough to flip a close comparison.",
+            "integer-second-timer",
+            "Integer-second timing",
+            "Timing a run with whole seconds, such as $(date +%s), is off by up to one "
+            "second at each end.",
+            "On a 30-second run that is about 3%, enough to reverse a close comparison. "
+            "inferlint uses the sub-second clocks recorded with each snapshot.",
             "inferlint rate before.json after.json",
         ),
         Tripwire(
             "T11",
-            "KV memory varies between starts",
-            "The memory left for the pool after loading the model and capturing CUDA "
-            "graphs can differ slightly from one start to the next.",
-            "A small difference can drop the pool by a whole step (T4).",
+            "kv-memory-drift",
+            "KV memory budget drifts between starts",
+            "The 'Available KV cache memory' vLLM reports at start-up can differ between "
+            "starts with identical flags, mostly because CUDA-graph capture memory varies.",
+            "A small drift can move the KV pool to a different step (T4). Record the "
+            "per-start figure with every result.",
             "inferlint check-log boot1.log boot2.log",
         ),
         Tripwire(
             "T12",
-            "Failures with no reason",
-            "When a server fails to start, simple log searches often miss the real error "
-            "and record a blank reason.",
-            "A failure without a reason cannot be fixed, repeated or trusted.",
+            "unexplained-failure",
+            "Start-up failure without a cause",
+            "When a server fails to start, a search of the log for 'Error' usually finds a "
+            "wrapper line rather than the root cause, and the failure is recorded with no "
+            "reason.",
+            "A failure without its cause cannot be fixed, reproduced or compared.",
             "inferlint check-log boot.log",
         ),
         Tripwire(
             "T13",
-            "Old script adopts the new server",
-            "A test script stopped while it waits for its server can mistake the next "
-            "script's server for its own, report it ready, then shut it down.",
-            "The next test dies partway through for no visible reason.",
+            "stale-waiter",
+            "Stale waiter adopts the next server",
+            "A test script stopped while it waits for its server to become ready can leave "
+            "its wait loop running. That loop sees the next script's server come up, "
+            "reports it as its own, and later shuts it down.",
+            "The next test dies partway through with no visible cause.",
             "see docs/orchestration.md",
         ),
         Tripwire(
             "T14",
-            "One block is reserved",
-            "vLLM reports N cache blocks but always keeps one empty. Its usage gauge "
-            "counts out of N - 1.",
-            "Capacity worked out from the reported block count is slightly too high.",
+            "null-block",
+            "Reserved null block",
+            "vLLM exports num_gpu_blocks = N but reserves one block (the null block), and "
+            f"vllm:kv_cache_usage_perc counts out of N - 1 ({VERIFIED}).",
+            "Capacity computed from the exported block count is one block too high.",
             "inferlint series run.series.jsonl --snapshot after.json",
+        ),
+        Tripwire(
+            "T15",
+            "client-server-mismatch",
+            "Client and server counts disagree",
+            "The load tool's own counts for the run (requests completed, output tokens) "
+            "are compared with the server's counters between the before and after "
+            "snapshots.",
+            "If the server did more work than the load tool sent, other traffic shared the "
+            "server and the result is contaminated. If it did less, the load tool counted "
+            "work the server did not do.",
+            "inferlint xray -o results/ -- vllm bench serve ...",
         ),
     )
 }
+
+_BY_SLUG = {t.slug: t for t in TRIPWIRES.values()}
+
+
+def lookup(key: str) -> Tripwire | None:
+    """A tripwire by code (``T1``, ``t1``) or name (``silent-preemption``)."""
+    k = key.strip()
+    return TRIPWIRES.get(k.upper()) or _BY_SLUG.get(k.lower())

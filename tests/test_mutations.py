@@ -7,6 +7,7 @@ as well as pass.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -14,7 +15,7 @@ from dataclasses import dataclass
 import pytest
 
 from conftest import FIXTURES, fixture_text
-from inferlint import bootlog, checks, series, telemetry
+from inferlint import benchresult, bootlog, checks, series, telemetry
 from inferlint.result import CheckResult, Status
 
 Edit = Callable[[str], str]
@@ -77,6 +78,19 @@ def series_check(
 def t8(requested: int) -> Callable[[Edit], CheckResult]:
     s = series.read(FIXTURES / "series" / "ladder.series.jsonl")
     return lambda e: checks.check_concurrency_reached(s, requested)
+
+
+LIVE_030 = FIXTURES.parent / "vllm-0.30" / "live"
+
+
+def t15(edit_bench: Edit) -> CheckResult:
+    """The vLLM 0.30 run: the benchmark's result file against the server's counters."""
+    doc = json.loads(edit_bench((LIVE_030 / "bench.json").read_text(encoding="utf-8")))
+    return checks.check_client_server_agree(
+        benchresult.parse(doc),
+        telemetry.load(LIVE_030 / "before.snapshot.json"),
+        telemetry.load(LIVE_030 / "after.snapshot.json"),
+    )
 
 
 @dataclass(frozen=True)
@@ -173,6 +187,12 @@ MUTANTS = [
         Status.PASS,
         Status.FAIL,
     ),
+    # T15: the client reports 2 fewer requests than the server finished: other traffic
+    Mutant("T15", t15, sub(r'"completed": 32,', '"completed": 30,'), Status.PASS, Status.FAIL),
+    # T15: the client claims 2 more than the server finished
+    Mutant("T15-over", t15, sub(r'"completed": 32,', '"completed": 34,'), Status.PASS, Status.FAIL),
+    # T15: a result file without counts cannot be compared
+    Mutant("T15-absent", t15, sub(r'"completed": 32, ', ""), Status.PASS, Status.UNKNOWN),
     Mutant(
         "T14-absent",
         series_check("blocks", checks.check_null_block),

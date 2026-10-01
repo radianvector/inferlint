@@ -6,21 +6,32 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-__all__ = ["CheckResult", "Status", "TripwireFailed"]
+__all__ = ["LABELS", "CheckResult", "Status", "TripwireFailed"]
 
 
 class Status(str, Enum):
     PASS = "pass"
     WARN = "warn"
+    # The tripwire caught its problem. For T7 and T12 that means the server failed;
+    # for every other tripwire it means a number from the run is not what it seems.
     FAIL = "fail"
     # The instrument could not decide: a series was missing, a line did not parse.
     # Never folded into PASS. A check that cannot see is not a check that passed.
     UNKNOWN = "unknown"
 
 
+# How each status is printed. The JSON keeps Status.value ("fail"), which scripts read.
+LABELS: dict[Status, str] = {
+    Status.PASS: "PASS",
+    Status.WARN: "WARN",
+    Status.FAIL: "TRIPWIRE-FAILED",
+    Status.UNKNOWN: "????",
+}
+
+
 class TripwireFailed(AssertionError):
     def __init__(self, result: CheckResult) -> None:
-        super().__init__(f"[{result.tripwire}] {result.status.value.upper()}: {result.message}")
+        super().__init__(f"[{result.tripwire}] {LABELS[result.status]}: {result.message}")
         self.result = result
 
 

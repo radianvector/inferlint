@@ -118,3 +118,42 @@ def test_result_block_shape() -> None:
     assert b["drafter_backend"] == "FLASHINFER"
     assert b["kv_pool_tokens"] == 19988
     assert b["unparsed_lines"] == 0
+
+
+def test_untested_version() -> None:
+    from inferlint.bootlog import BootFacts, untested_version
+
+    assert untested_version(BootFacts(vllm_version="0.28.0")) is None
+    assert untested_version(BootFacts(vllm_version="0.30.1")) is None  # same release series
+    assert untested_version(BootFacts(vllm_version=None)) is None  # nothing to judge
+    note = untested_version(BootFacts(vllm_version="0.31.0"))
+    assert note is not None and "0.31.0 is not a tested version" in note
+
+
+def test_labels_keep_same_named_logs_apart() -> None:
+    from inferlint.bootlog import labels
+
+    assert labels(["a.log", "b.log"]) == ["a.log", "b.log"]
+    assert labels(["run1/boot.log", "run2/boot.log"]) == ["run1/boot.log", "run2/boot.log"]
+    assert labels(["x/run/boot.log", "y/run/boot.log"]) == ["x/run/boot.log", "y/run/boot.log"]
+
+
+def test_two_boot_logs_with_one_name_are_both_compared(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Two runs' boot.log files, same flags, different pools: T4 must see both."""
+    from conftest import fixture_text
+    from inferlint import cli
+
+    for run, name in (("run1", "boot_pool_level_hi.log"), ("run2", "boot_pool_level_lo.log")):
+        (tmp_path / run).mkdir()
+        (tmp_path / run / "boot.log").write_text(fixture_text(name), encoding="utf-8")
+    import contextlib
+    import io
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        cli.main(
+            ["check-log", str(tmp_path / "run1" / "boot.log"), str(tmp_path / "run2" / "boot.log")]
+        )
+    out = buf.getvalue()
+    assert "[ T4] WARN  same flags, 2 different pools" in out
+    assert "run1/boot.log" in out and "run2/boot.log" in out

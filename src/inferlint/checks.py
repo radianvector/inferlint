@@ -8,9 +8,11 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 
+from .benchresult import BenchResult
 from .blocks import infer_blocks, predict_concurrency
 from .bootlog import BootFacts
 from .failures import Phase, classify
+from .metricnames import VLLM
 from .result import CheckResult, Status
 from .series import Series
 from .telemetry import ServerRestarted, Snapshot, counter_delta, span_s
@@ -19,6 +21,7 @@ __all__ = [
     "check_backend_honoured",
     "check_block_size",
     "check_boot_failure",
+    "check_client_server_agree",
     "check_concurrency_reached",
     "check_kv_memory_stable",
     "check_no_preemption",
@@ -26,11 +29,12 @@ __all__ = [
     "check_same_pool",
     "concurrency_ceiling",
     "precise_rate",
+    "with_timer_comparison",
 ]
 
-PREEMPTIONS = "vllm:num_preemptions_total"
-GENERATION_TOKENS = "vllm:generation_tokens_total"
-CACHE_INFO = "vllm:cache_config_info"
+PREEMPTIONS = VLLM.preemptions
+GENERATION_TOKENS = VLLM.generation_tokens
+CACHE_INFO = VLLM.cache_info
 
 
 def check_no_preemption(before: Snapshot, after: Snapshot) -> CheckResult:
@@ -274,25 +278,50 @@ def check_concurrency_reached(
 ) -> CheckResult:
     """T8. Did the requested concurrency ever actually run at once?
 
-    A client with 32 requests in flight measures a 32-user server only if the server
-    ran 32 at once. The boot line ``Maximum concurrency for N tokens per request``
+    A client with 32 requests in flight measures a server running 32 at once only if the
+    server ran 32 at once. The boot line ``Maximum concurrency for N tokens per request``
     assumes every request fills the full context, so it is no substitute for looking.
+
+    vLLM 0.29 added admission control: with ``--max-num-queued-reqs N`` at most N
+    requests are in flight (running plus waiting), and the rest are rejected with HTTP 503
+    instead of queued. When the boot log sets that limit and the recording reached it,
+    the message says the requests were rejected, not that the cache was full.
     """
     peak = series.peak_running()
-    ev: dict[str, object] = {"requested": requested, "peak_running": peak}
+    in_flight = [
+        (s.running or 0.0) + (s.waiting or 0.0)
+        for s in series.samples
+        if s.running is not None and s.waiting is not None
+    ]
+    peak_in_flight = max(in_flight) if in_flight else None
+    args = (facts.non_default_args if facts is not None else None) or {}
+    cap = args.get("max_num_queued_reqs")
+    ev: dict[str, object] = {
+        "requested": requested,
+        "peak_running": peak,
+        "peak_in_flight": peak_in_flight,
+    }
     if facts is not None and facts.max_concurrency is not None:
         ev["boot_line_max_concurrency"] = facts.max_concurrency
         ev["boot_line_request_len"] = facts.max_concurrency_request_len
+    if isinstance(cap, int):
+        ev["max_num_queued_reqs"] = cap
+    if args.get("max_num_queued_tokens") is not None:
+        ev["max_num_queued_tokens"] = args["max_num_queued_tokens"]
     if peak is None:
         return CheckResult("T8", Status.UNKNOWN, "series has no num_requests_running samples", ev)
-    if peak < requested:
+    if peak >= requested:
         return CheckResult(
-            "T8",
-            Status.FAIL,
-            f"requested {requested} concurrent, server never ran more than {peak:g}",
-            ev,
+            "T8", Status.PASS, f"reached {peak:g} running (requested {requested})", ev
         )
-    return CheckResult("T8", Status.PASS, f"reached {peak:g} running (requested {requested})", ev)
+    msg = f"requested {requested} concurrent, server never ran more than {peak:g}"
+    limit = cap if isinstance(cap, int) and cap < requested else None
+    if limit is not None and peak_in_flight is not None and peak_in_flight >= limit:
+        msg += (
+            f"; admission control (--max-num-queued-reqs {limit}) kept at most {limit} in "
+            f"flight, so the other {requested - limit} were rejected, not queued"
+        )
+    return CheckResult("T8", Status.FAIL, msg, ev)
 
 
 def concurrency_ceiling(
@@ -392,6 +421,98 @@ def check_null_block(series: Series, snapshot: Snapshot) -> CheckResult:
         f"gauge denominator is {inf.blocks}, expected num_gpu_blocks - 1 = {reported - 1}; "
         "the usage semantics changed, or the series is not from this boot",
         ev,
+    )
+
+
+def check_client_server_agree(
+    bench: BenchResult,
+    before: Snapshot,
+    after: Snapshot,
+    *,
+    expected_extra_requests: int = 0,
+) -> CheckResult:
+    """T15. Did the server do the work the load tool says it sent, and no other work?
+
+    The load tool's result file counts the requests it completed and the output tokens it
+    received. The server's counters between the before and after snapshots count what the
+    server finished. A load tool can send requests it leaves out of its result (vllm
+    bench serve's initial test request and warm-ups, which its output reports); those are
+    ``expected_extra_requests``. Any other difference means other traffic shared the
+    server, or the client counted work the server did not do.
+    """
+    try:
+        done = counter_delta(before, after, VLLM.request_success)
+        tokens = counter_delta(before, after, VLLM.generation_tokens)
+    except ServerRestarted as e:
+        return CheckResult("T15", Status.UNKNOWN, str(e), {"restarted": True, **e.evidence})
+    ev: dict[str, object] = {
+        "client_completed": bench.completed,
+        "client_failed": bench.failed,
+        "client_output_tokens": bench.output_tokens,
+        "server_finished": done,
+        "server_output_tokens": tokens,
+        "expected_extra_requests": expected_extra_requests,
+        "result_file": bench.path,
+    }
+    if done is None or tokens is None:
+        return CheckResult("T15", Status.UNKNOWN, "a server counter is missing from a snapshot", ev)
+    if bench.completed is None or bench.output_tokens is None:
+        return CheckResult(
+            "T15", Status.UNKNOWN, "the result file has no completed or output-token count", ev
+        )
+    extra = int(done) - bench.completed
+    ev["extra_requests"] = extra
+    if extra > expected_extra_requests:
+        other = extra - expected_extra_requests
+        return CheckResult(
+            "T15",
+            Status.FAIL,
+            f"the server finished {other} more request{'s' if other != 1 else ''} than the "
+            "load tool sent; other traffic shared the server during the run",
+            ev,
+        )
+    if extra < expected_extra_requests:
+        missing = expected_extra_requests - extra
+        return CheckResult(
+            "T15",
+            Status.FAIL,
+            f"the load tool counted {missing} more completed request"
+            f"{'s' if missing != 1 else ''} than the server finished",
+            ev,
+        )
+    per = bench.output_tokens / bench.completed if bench.completed else 0.0
+    extra_tokens = tokens - bench.output_tokens
+    ev["extra_output_tokens"] = extra_tokens
+    # The extra requests produce output too; a mismatch beyond what they can explain means
+    # the client and the server counted different tokens.
+    if not 0 <= extra_tokens <= expected_extra_requests * max(per, 1.0) * 1.5:
+        return CheckResult(
+            "T15",
+            Status.WARN,
+            f"requests agree, but the server generated {tokens:,.0f} output tokens and the "
+            f"load tool counted {bench.output_tokens:,}",
+            ev,
+        )
+    msg = (
+        f"client and server agree: {bench.completed} requests, "
+        f"{bench.output_tokens:,} output tokens"
+    )
+    if extra:
+        msg += f", plus {extra} untimed request{'s' if extra != 1 else ''} (test or warm-up)"
+    return CheckResult("T15", Status.PASS, msg, ev)
+
+
+def with_timer_comparison(r: CheckResult) -> CheckResult:
+    """T10's message with what an integer-second timer would have said, for the terminal."""
+    if "integer_second_error" not in r.evidence:
+        return r
+    return CheckResult(
+        r.tripwire,
+        r.status,
+        f"{r.message}; an integer-second timer would say "
+        f"{r.evidence['integer_second_rate_per_s']:.2f} "
+        f"({r.evidence['integer_second_error']:+.2%})",
+        r.evidence,
     )
 
 

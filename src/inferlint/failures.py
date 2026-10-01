@@ -43,7 +43,14 @@ class Phase(str, Enum):
 
 
 _RULES: tuple[tuple[Kind, re.Pattern[str]], ...] = (
-    (Kind.JIT_TOOLCHAIN, re.compile(r"CUDA compiler and CUDA toolkit headers are incompatible")),
+    # A kernel build's own error first; "Ninja build failed" only says that a step failed.
+    (
+        Kind.JIT_TOOLCHAIN,
+        re.compile(r"(?P<d>CUDA compiler and CUDA toolkit headers are incompatible)"),
+    ),
+    (Kind.JIT_TOOLCHAIN, re.compile(r"\bptxas\b.*\bfatal\s*:\s*(?P<d>.+)")),
+    (Kind.JIT_TOOLCHAIN, re.compile(r"\bnvcc fatal\s*:\s*(?P<d>.+)")),
+    (Kind.JIT_TOOLCHAIN, re.compile(r"\bld: (?P<d>cannot find .+)")),
     (Kind.JIT_TOOLCHAIN, re.compile(r"Ninja build failed|ninja: build stopped")),
     (Kind.OUT_OF_MEMORY, re.compile(r"\bOutOfMemoryError\b|CUDA out of memory")),
     (

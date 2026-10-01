@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, cast
 
+from .metricnames import VLLM
 from .prom import Metrics
 from .telemetry import Snapshot, scrape
 
@@ -37,12 +38,12 @@ SCHEMA = "inferlint.series/1"
 
 # Output field -> vLLM series. Absent series are written as null, never 0.
 VLLM_GAUGES: dict[str, str] = {
-    "running": "vllm:num_requests_running",
-    "waiting": "vllm:num_requests_waiting",
-    "kv_usage": "vllm:kv_cache_usage_perc",
-    "preemptions": "vllm:num_preemptions_total",
-    "generation_tokens": "vllm:generation_tokens_total",
-    "prompt_tokens": "vllm:prompt_tokens_total",
+    "running": VLLM.running,
+    "waiting": VLLM.waiting,
+    "kv_usage": VLLM.kv_usage,
+    "preemptions": VLLM.preemptions,
+    "generation_tokens": VLLM.generation_tokens,
+    "prompt_tokens": VLLM.prompt_tokens,
 }
 
 

@@ -20,7 +20,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-__all__ = ["BootFacts", "Unparsed", "parse", "parse_file", "strip_log_prefix"]
+__all__ = [
+    "TESTED_VLLM",
+    "BootFacts",
+    "Unparsed",
+    "labels",
+    "parse",
+    "parse_file",
+    "strip_log_prefix",
+    "untested_version",
+]
+
+# vLLM release series checked live on a GPU (the README's support table lists each check).
+TESTED_VLLM: tuple[str, ...] = ("0.28", "0.29", "0.30")
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 # "(EngineCore pid=3475) ERROR 09-05 23:33:11 [core.py:1348] message"
@@ -276,3 +288,37 @@ def parse(text: str) -> BootFacts:
 
 def parse_file(path: str | Path) -> BootFacts:
     return parse(Path(path).read_text(encoding="utf-8", errors="replace"))
+
+
+def labels(paths: Sequence[str | Path]) -> list[str]:
+    """Short, distinct names for boot logs: the file name, with folders added as needed.
+
+    Two runs' logs are often both called boot.log; keyed by file name alone, a comparison
+    of them would see one log, not two.
+    """
+    parts = [Path(p).parts for p in paths]
+    for depth in range(1, max((len(x) for x in parts), default=1) + 1):
+        out = ["/".join(x[-depth:]) for x in parts]
+        if len(set(out)) == len(out):
+            return out
+    return [str(p) for p in paths]
+
+
+def untested_version(facts: BootFacts) -> str | None:
+    """A warning when the log comes from a vLLM release series inferlint was not tested on.
+
+    Log lines and metric names change between releases. A check that cannot parse says
+    Can't tell, but a format that still parses with a different meaning would not, so a
+    new version is flagged up front.
+    """
+    v = facts.vllm_version
+    if v is None:
+        return None
+    series = ".".join(v.split(".")[:2])
+    if series in TESTED_VLLM:
+        return None
+    return (
+        f"vLLM {v} is not a tested version (tested: {', '.join(TESTED_VLLM)}). If a "
+        "check says Can't tell or a value looks wrong, a log line or metric may have "
+        "changed: please report it."
+    )

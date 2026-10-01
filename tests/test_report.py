@@ -113,7 +113,7 @@ def test_every_finding_and_the_whole_guide_render() -> None:
 
 def test_status_never_rests_on_colour_alone() -> None:
     html = report.render(live_report())
-    for label in ("Fail", "Warning", "Pass"):
+    for label in ("Tripwire failed", "Warning", "Pass"):
         assert f"</svg>{label}</span>" in html
 
 
@@ -141,14 +141,15 @@ def test_summary_says_what_happened() -> None:
     assert "32,000 (1,000 per request)" in html
     assert "32: 32 reached their token limit, no errors" in html
     assert (
-        "8 of 14. Not here: T2 and T3 (run at clean-up), T4 and T11 (need two or more "
-        "boot logs), T7 (needs a live server), T13 (a rule for test scripts)"
+        "8 of 15. Not here: T2 and T3 (run at clean-up), T4 and T11 (need two or more "
+        "boot logs), T7 (needs a live server), T13 (a rule for test scripts), T15 (needs "
+        "the load tool&#x27;s result file)"
     ) in html
 
 
 def test_a_fail_is_explained_as_a_measurement_finding() -> None:
     html = report.render(live_report())
-    assert "It is about the measurement, not a crash." in html
+    assert "The server worked; the failed tripwires are about the measurement." in html
     assert "The server finished 32 requests with no errors." in html
 
 
@@ -172,7 +173,7 @@ def test_errors_in_the_counters_change_the_summary() -> None:
 
 def test_a_crash_tripwire_says_the_server_failed() -> None:
     html = report.render(report.build(boot_logs=[FX / "boot_fail_accelerator.log"]))
-    assert "T12 failed: the server itself did not work." in html
+    assert "T12: the server itself failed." in html
 
 
 def test_restart_between_readings_drops_the_counts() -> None:
@@ -188,7 +189,7 @@ def test_glossaries_explain_every_result_and_the_terms() -> None:
     html = report.render(live_report())
     assert html.count('<details class="gloss"') == 2
     table = html.split('<table class="meanings">', 1)[1].split("</table>", 1)[0]
-    for label in ("Fail", "Warning", "Can't tell", "Pass"):
+    for label in ("Tripwire failed", "Warning", "Can't tell", "Pass"):
         assert f"</svg>{label}</span>" in table
     for term in ("Token", "KV cache", "KV pool", "KV block", "Preemption", "Concurrency"):
         assert f"<dt>{term}</dt>" in html
@@ -263,7 +264,7 @@ def test_cli_report_and_explain(tmp_path: Path, capsys: pytest.CaptureFixture[st
         ]
     )
     assert code == 0 and out.stat().st_size > 50_000
-    assert "8 checks (4 pass, 2 warn, 2 fail)" in capsys.readouterr().out
+    assert "8 checks (4 pass, 2 warn, 2 tripwire-failed)" in capsys.readouterr().out
     made_from = "boot.log, before.snapshot.json, after.snapshot.json, run.series.jsonl"
     assert made_from in out.read_text(encoding="utf-8")
     assert main(["explain", "t1"]) == 0
@@ -275,3 +276,15 @@ def test_cli_report_creates_the_output_folder(tmp_path: Path) -> None:
     out = tmp_path / "runs" / "today" / "r.html"
     assert main(["report", "-o", str(out), "--boot-log", str(LIVE / "boot.log")]) == 0
     assert out.stat().st_size > 10_000
+
+
+def test_an_untested_vllm_version_is_flagged(tmp_path: Path) -> None:
+    log = (FX / "boot_cudagraphs.log").read_text(encoding="utf-8")
+    assert "(v0.28" in log
+    newer = tmp_path / "boot.log"
+    newer.write_text(log.replace("(v0.28", "(v0.99"), encoding="utf-8")
+    assert 'class="version-note"' not in report.render(
+        report.build(boot_logs=[FX / "boot_cudagraphs.log"])
+    )
+    html = report.render(report.build(boot_logs=[newer]))
+    assert 'class="version-note"' in html and "vLLM 0.99" in html and "not a tested version" in html

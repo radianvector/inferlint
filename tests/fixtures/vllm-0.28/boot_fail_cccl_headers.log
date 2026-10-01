@@ -1,0 +1,409 @@
+(APIServer pid=8136) INFO 09-30 20:36:17 [api_utils.py:333] 
+(APIServer pid=8136) INFO 09-30 20:36:17 [api_utils.py:333]        █     █     █▄   ▄█
+(APIServer pid=8136) INFO 09-30 20:36:17 [api_utils.py:333]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.28.0
+(APIServer pid=8136) INFO 09-30 20:36:17 [api_utils.py:333]   █▄█▀ █     █     █     █  model   /models/Qwen3.8-27B-W4A16-AutoRound
+(APIServer pid=8136) INFO 09-30 20:36:17 [api_utils.py:333]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=8136) INFO 09-30 20:36:17 [api_utils.py:333] 
+(APIServer pid=8136) INFO 09-30 20:36:17 [api_utils.py:272] non-default args: {'model_tag': '/models/Qwen3.8-27B-W4A16-AutoRound', 'host': '127.0.0.1', 'model': '/models/Qwen3.8-27B-W4A16-AutoRound', 'max_model_len': 16384, 'served_model_name': ['qwen38'], 'gpu_memory_utilization': 0.93, 'max_num_seqs': 32}
+(APIServer pid=8136) INFO 09-30 20:36:24 [model.py:672] Resolved architecture: Qwen3_5ForConditionalGeneration
+(APIServer pid=8136) INFO 09-30 20:36:24 [model.py:1965] Using max model len 16384
+(APIServer pid=8136) INFO 09-30 20:36:25 [config.py:605] Mamba cache mode is set to 'align' for Qwen3_5ForConditionalGeneration by default when prefix caching is enabled
+(APIServer pid=8136) INFO 09-30 20:36:25 [kernel.py:308] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+(APIServer pid=8136) [transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+(EngineCore pid=8517) INFO 09-30 20:36:37 [core.py:122] Initializing a V1 LLM engine (v0.28.0) with config: model='/models/Qwen3.8-27B-W4A16-AutoRound', speculative_config=None, tokenizer='/models/Qwen3.8-27B-W4A16-AutoRound', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=16384, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=compressed-tensors, quantization_config=None, enforce_eager=False, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=qwen38, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'ir_enable_torch_wrap': True, 'splitting_ops': ['vllm::unified_attention_with_output', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::linear_attention', 'vllm::qwen_gdn_attention_core', 'vllm::qwen_gdn_attention_core_fused_norm_packed', 'vllm::gdn_attention_core_xpu', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::deepseek_v4_attention', 'vllm::hpc_rope_norm_forward', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [2048], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 64, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native']), enable_flashinfer_autotune=True, enable_cutedsl_warmup=True, enable_jit_warmup=True, enable_bf16x3_router_gemm=False, moe_backend='auto', linear_backend='auto')
+(EngineCore pid=8517) INFO 09-30 20:36:38 [parallel_state.py:1638] world_size=1 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_8364d53ea51b42189f889464adccc7f0 backend=nccl
+(EngineCore pid=8517) INFO 09-30 20:36:39 [parallel_state.py:1982] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank N/A, EPLB rank N/A
+(EngineCore pid=8517) INFO 09-30 20:36:40 [topk_topp_sampler.py:62] Using FlashInfer for top-p & top-k sampling.
+(EngineCore pid=8517) [transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+(EngineCore pid=8517) INFO 09-30 20:36:44 [gpu_model_runner.py:5419] Starting to load model /models/Qwen3.8-27B-W4A16-AutoRound...
+(EngineCore pid=8517) INFO 09-30 20:36:45 [cuda.py:545] Using backend AttentionBackendEnum.FLASH_ATTN for vit attention
+(EngineCore pid=8517) INFO 09-30 20:36:45 [mm_encoder_attention.py:375] Using AttentionBackendEnum.FLASH_ATTN for MMEncoderAttention.
+(EngineCore pid=8517) INFO 09-30 20:36:45 [compressed_tensors_wNa16.py:137] Using MarlinLinearKernel for CompressedTensorsWNA16
+(EngineCore pid=8517) INFO 09-30 20:36:45 [qwen_gdn_linear_attn.py:158] Using Triton/FLA GDN prefill kernel (requested=auto, head_k_dim=128).
+(EngineCore pid=8517) INFO 09-30 20:36:45 [qwen_gdn_linear_attn.py:505] GDN decode kernel: cuda
+(EngineCore pid=8517) INFO 09-30 20:36:45 [cuda.py:486] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=8517) INFO 09-30 20:36:45 [flash_attn.py:866] Using FlashAttention version 2
+(EngineCore pid=8517) INFO 09-30 20:36:45 [weight_utils.py:858] Filesystem type for checkpoints: 9P. Checkpoint size: 18.12 GiB. Available RAM: 18.94 GiB.
+(EngineCore pid=8517) INFO 09-30 20:36:45 [weight_utils.py:888] Auto-prefetch is disabled because the filesystem (9P) is not a recognized network FS (NFS/Lustre) and the checkpoint size (18.12 GiB) exceeds 90% of available RAM (18.94 GiB).
+(EngineCore pid=8517) 
+Loading safetensors checkpoint shards:   0% Completed | 0/8 [00:00<?, ?it/s]
+(EngineCore pid=8517) 
+Loading safetensors checkpoint shards:  12% Completed | 1/8 [00:13<01:32, 13.24s/it]
+(EngineCore pid=8517) 
+Loading safetensors checkpoint shards:  25% Completed | 2/8 [00:26<01:19, 13.26s/it]
+(EngineCore pid=8517) 
+Loading safetensors checkpoint shards:  38% Completed | 3/8 [00:39<01:05, 13.18s/it]
+(EngineCore pid=8517) 
+Loading safetensors checkpoint shards:  50% Completed | 4/8 [00:52<00:52, 13.19s/it]
+(EngineCore pid=8517) 
+Loading safetensors checkpoint shards:  62% Completed | 5/8 [00:55<00:28,  9.46s/it]
+(EngineCore pid=8517) 
+Loading safetensors checkpoint shards:  75% Completed | 6/8 [01:05<00:18,  9.48s/it]
+(EngineCore pid=8517) 
+Loading safetensors checkpoint shards:  88% Completed | 7/8 [01:14<00:09,  9.56s/it]
+(EngineCore pid=8517) 
+Loading safetensors checkpoint shards: 100% Completed | 8/8 [01:14<00:00,  9.36s/it]
+(EngineCore pid=8517) 
+(EngineCore pid=8517) INFO 09-30 20:38:00 [default_loader.py:430] Loading weights took 75.00 seconds
+(EngineCore pid=8517) INFO 09-30 20:38:01 [gpu_model_runner.py:5515] Model loading took 17.71 GiB memory and 76.064813 seconds
+(EngineCore pid=8517) INFO 09-30 20:38:01 [interface.py:911] Setting attention block size to 784 tokens to ensure that attention page size is >= mamba page size.
+(EngineCore pid=8517) INFO 09-30 20:38:01 [interface.py:935] Padding mamba page size by 0.13% to ensure that mamba page size and attention page size are exactly equal.
+(EngineCore pid=8517) INFO 09-30 20:38:01 [gpu_model_runner.py:6590] Encoder cache will be initialized with a budget of 16384 tokens, and profiled with 1 image items of the maximum feature size.
+(EngineCore pid=8517) INFO 09-30 20:38:13 [backends.py:1094] Using cache directory: /root/.cache/vllm/torch_compile_cache/57efebcb77/rank_0_0/backbone for vLLM's torch.compile
+(EngineCore pid=8517) INFO 09-30 20:38:13 [backends.py:1155] Dynamo bytecode transform time: 10.16 s
+(EngineCore pid=8517) INFO 09-30 20:38:25 [backends.py:393] Compiling a graph for compile range (1, 2048) takes 11.07 s
+(EngineCore pid=8517) INFO 09-30 20:38:29 [backends.py:920] collected artifacts: 65 entries, 6 artifacts, 10226030 bytes total
+(EngineCore pid=8517) INFO 09-30 20:38:30 [decorators.py:708] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/a7350c46d58d64bf5fda5a03e0006feed765776877fcf8ab92c566fb8709ed86/rank_0_0/model
+(EngineCore pid=8517) INFO 09-30 20:38:30 [monitor.py:53] torch.compile took 27.29 s in total
+(EngineCore pid=8517) /opt/venv/lib/python3.12/site-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+(EngineCore pid=8517)   warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+(EngineCore pid=8517) INFO 09-30 20:39:14 [monitor.py:81] Initial profiling/warmup run took 44.42 s
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] EngineCore failed to start.
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] Traceback (most recent call last):
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/flashinfer/jit/cpp_ext.py", line 370, in run_ninja
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     subprocess.run(
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/usr/local/lib/python3.12/subprocess.py", line 571, in run
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     raise CalledProcessError(retcode, process.args,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] subprocess.CalledProcessError: Command '['ninja', '-v', '-C', '/root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling', '-f', '/root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/build.ninja']' returned non-zero exit status 1.
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] 
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] The above exception was the direct cause of the following exception:
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] 
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] Traceback (most recent call last):
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1315, in run_engine_core
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     engine_core = EngineCoreProc(*args, engine_index=dp_rank, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return func(*args, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1073, in __init__
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     super().__init__(
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 144, in __init__
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     kv_cache_config = self._initialize_kv_caches(vllm_config)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return func(*args, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 296, in _initialize_kv_caches
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     available_gpu_memory = self.model_executor.determine_available_memory()
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/executor/abstract.py", line 149, in determine_available_memory
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return self.collective_rpc("determine_available_memory")
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 103, in collective_rpc
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     result = run_method(self.driver_worker, method, args, kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/serial_utils.py", line 510, in run_method
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return func(*args, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return func(*args, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 519, in determine_available_memory
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     self.model_runner.profile_run()
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6625, in profile_run
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     output = self._dummy_sampler_run(last_hidden_states)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return func(*args, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6422, in _dummy_sampler_run
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     raise e
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6393, in _dummy_sampler_run
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     sampler_output = self.sampler(
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                      ^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return self._call_impl(*args, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return forward_call(*args, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/sample/sampler.py", line 103, in forward
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     sampled, processed_logprobs = self.sample(logits, sampling_metadata)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/sample/sampler.py", line 287, in sample
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     random_sampled, processed_logprobs = self.topk_topp_sampler(
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                                          ^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return self._call_impl(*args, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return forward_call(*args, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/sample/ops/topk_topp_sampler.py", line 182, in forward_cuda
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return flashinfer_sample(logits.contiguous(), k, p, generators), None
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/sample/ops/topk_topp_sampler.py", line 508, in flashinfer_sample
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     next_token_ids = flashinfer.sampling.top_k_top_p_sampling_from_logits(
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/flashinfer/api_logging.py", line 2333, in _auto_dump_wrapper
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return _inner(*args, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/flashinfer/sampling.py", line 1547, in top_k_top_p_sampling_from_logits
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     masked_logits = top_k_mask_logits(logits, top_k)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/flashinfer/api_logging.py", line 2333, in _auto_dump_wrapper
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return _inner(*args, **kwargs)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/flashinfer/sampling.py", line 1974, in top_k_mask_logits
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     return get_sampling_module().top_k_mask_logits(
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/flashinfer/sampling.py", line 68, in get_sampling_module
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     module = gen_sampling_module().build_and_load()
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/flashinfer/jit/core.py", line 320, in build_and_load
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     self.build()
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/flashinfer/jit/core.py", line 427, in build
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     run_ninja(self.build_dir, self.ninja_path, verbose)
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]   File "/opt/venv/lib/python3.12/site-packages/flashinfer/jit/cpp_ext.py", line 382, in run_ninja
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]     raise RuntimeError(msg) from e
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] RuntimeError: Ninja build failed. Ninja output:
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] ninja: Entering directory `/root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling'
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] [1/4]  /opt/venv/lib/python3.12/site-packages/nvidia/cu13/bin/nvcc --generate-dependencies-with-compile -MF /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_sampling.cuda.o.d -DPy_LIMITED_API=0x03090000 -D_GLIBCXX_USE_CXX11_ABI=1 -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/thrust -isystem /usr/local/include/python3.12 -isystem /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/tools/util/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/spdlog/include --compiler-options=-fPIC --expt-relaxed-constexpr -static-global-template-stub=false -gencode=arch=compute_89,code=sm_89 -DFLASHINFER_ENABLE_FP8_E8M0 -DFLASHINFER_ENABLE_FP4_E2M1 -std=c++17 --threads=1 -use_fast_math -Xfatbin=-compress-all -DFLASHINFER_ENABLE_F16 -DFLASHINFER_ENABLE_BF16 -DFLASHINFER_ENABLE_FP8_E4M3 -DFLASHINFER_ENABLE_FP8_E5M2 -DNDEBUG -O3 -c /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/sampling.cu -o /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_sampling.cuda.o 
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] FAILED: [code=1] /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_sampling.cuda.o 
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]  /opt/venv/lib/python3.12/site-packages/nvidia/cu13/bin/nvcc --generate-dependencies-with-compile -MF /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_sampling.cuda.o.d -DPy_LIMITED_API=0x03090000 -D_GLIBCXX_USE_CXX11_ABI=1 -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/thrust -isystem /usr/local/include/python3.12 -isystem /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/tools/util/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/spdlog/include --compiler-options=-fPIC --expt-relaxed-constexpr -static-global-template-stub=false -gencode=arch=compute_89,code=sm_89 -DFLASHINFER_ENABLE_FP8_E8M0 -DFLASHINFER_ENABLE_FP4_E2M1 -std=c++17 --threads=1 -use_fast_math -Xfatbin=-compress-all -DFLASHINFER_ENABLE_F16 -DFLASHINFER_ENABLE_BF16 -DFLASHINFER_ENABLE_FP8_E4M3 -DFLASHINFER_ENABLE_FP8_E5M2 -DNDEBUG -O3 -c /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/sampling.cu -o /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_sampling.cuda.o 
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] In file included from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/extended_data_types.h:26,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/builtin.h:26,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/dialect.h:25,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/attributes.h:26,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/assert.h:25,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/__cccl_config:15,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub/cub/config.cuh:12,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub/cub/cub.cuh:13,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/include/flashinfer/sampling.cuh:26,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/sampling.cu:16:
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/cuda_toolkit.h:41:8: error: #error "CUDA compiler and CUDA toolkit headers are incompatible, please check your include paths"
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]    41 | #      error "CUDA compiler and CUDA toolkit headers are incompatible, please check your include paths"
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]       |        ^~~~~
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] [2/4]  /opt/venv/lib/python3.12/site-packages/nvidia/cu13/bin/nvcc --generate-dependencies-with-compile -MF /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_renorm.cuda.o.d -DPy_LIMITED_API=0x03090000 -D_GLIBCXX_USE_CXX11_ABI=1 -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/thrust -isystem /usr/local/include/python3.12 -isystem /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/tools/util/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/spdlog/include --compiler-options=-fPIC --expt-relaxed-constexpr -static-global-template-stub=false -gencode=arch=compute_89,code=sm_89 -DFLASHINFER_ENABLE_FP8_E8M0 -DFLASHINFER_ENABLE_FP4_E2M1 -std=c++17 --threads=1 -use_fast_math -Xfatbin=-compress-all -DFLASHINFER_ENABLE_F16 -DFLASHINFER_ENABLE_BF16 -DFLASHINFER_ENABLE_FP8_E4M3 -DFLASHINFER_ENABLE_FP8_E5M2 -DNDEBUG -O3 -c /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/renorm.cu -o /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_renorm.cuda.o 
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] FAILED: [code=1] /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_renorm.cuda.o 
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]  /opt/venv/lib/python3.12/site-packages/nvidia/cu13/bin/nvcc --generate-dependencies-with-compile -MF /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_renorm.cuda.o.d -DPy_LIMITED_API=0x03090000 -D_GLIBCXX_USE_CXX11_ABI=1 -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/thrust -isystem /usr/local/include/python3.12 -isystem /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/tools/util/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/spdlog/include --compiler-options=-fPIC --expt-relaxed-constexpr -static-global-template-stub=false -gencode=arch=compute_89,code=sm_89 -DFLASHINFER_ENABLE_FP8_E8M0 -DFLASHINFER_ENABLE_FP4_E2M1 -std=c++17 --threads=1 -use_fast_math -Xfatbin=-compress-all -DFLASHINFER_ENABLE_F16 -DFLASHINFER_ENABLE_BF16 -DFLASHINFER_ENABLE_FP8_E4M3 -DFLASHINFER_ENABLE_FP8_E5M2 -DNDEBUG -O3 -c /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/renorm.cu -o /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_renorm.cuda.o 
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] In file included from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/extended_data_types.h:26,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/builtin.h:26,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/dialect.h:25,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/attributes.h:26,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/assert.h:25,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/__cccl_config:15,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__internal/atomic.h:13,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/detail/__config:14,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/type_traits:14,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include/cooperative_groups/details/info.h:167,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include/cooperative_groups.h:55,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/include/flashinfer/air_top_p.cuh:22,
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/renorm.cu:16:
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/cuda_toolkit.h:41:8: error: #error "CUDA compiler and CUDA toolkit headers are incompatible, please check your include paths"
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]    41 | #      error "CUDA compiler and CUDA toolkit headers are incompatible, please check your include paths"
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346]       |        ^~~~~
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] [3/4]  /opt/venv/lib/python3.12/site-packages/nvidia/cu13/bin/nvcc --generate-dependencies-with-compile -MF /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_flashinfer_sampling_binding.cuda.o.d -DPy_LIMITED_API=0x03090000 -D_GLIBCXX_USE_CXX11_ABI=1 -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/thrust -isystem /usr/local/include/python3.12 -isystem /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/tools/util/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/spdlog/include --compiler-options=-fPIC --expt-relaxed-constexpr -static-global-template-stub=false -gencode=arch=compute_89,code=sm_89 -DFLASHINFER_ENABLE_FP8_E8M0 -DFLASHINFER_ENABLE_FP4_E2M1 -std=c++17 --threads=1 -use_fast_math -Xfatbin=-compress-all -DFLASHINFER_ENABLE_F16 -DFLASHINFER_ENABLE_BF16 -DFLASHINFER_ENABLE_FP8_E4M3 -DFLASHINFER_ENABLE_FP8_E5M2 -DNDEBUG -O3 -c /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/flashinfer_sampling_binding.cu -o /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_flashinfer_sampling_binding.cuda.o 
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] ninja: build stopped: subcommand failed.
+(EngineCore pid=8517) ERROR 09-30 20:39:19 [core.py:1346] 
+(EngineCore pid=8517) Process EngineCore:
+(EngineCore pid=8517) Traceback (most recent call last):
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/flashinfer/jit/cpp_ext.py", line 370, in run_ninja
+(EngineCore pid=8517)     subprocess.run(
+(EngineCore pid=8517)   File "/usr/local/lib/python3.12/subprocess.py", line 571, in run
+(EngineCore pid=8517)     raise CalledProcessError(retcode, process.args,
+(EngineCore pid=8517) subprocess.CalledProcessError: Command '['ninja', '-v', '-C', '/root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling', '-f', '/root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/build.ninja']' returned non-zero exit status 1.
+(EngineCore pid=8517) 
+(EngineCore pid=8517) The above exception was the direct cause of the following exception:
+(EngineCore pid=8517) 
+(EngineCore pid=8517) Traceback (most recent call last):
+(EngineCore pid=8517)   File "/usr/local/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
+(EngineCore pid=8517)     self.run()
+(EngineCore pid=8517)   File "/usr/local/lib/python3.12/multiprocessing/process.py", line 108, in run
+(EngineCore pid=8517)     self._target(*self._args, **self._kwargs)
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1350, in run_engine_core
+(EngineCore pid=8517)     raise e
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1315, in run_engine_core
+(EngineCore pid=8517)     engine_core = EngineCoreProc(*args, engine_index=dp_rank, **kwargs)
+(EngineCore pid=8517)                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore pid=8517)     return func(*args, **kwargs)
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1073, in __init__
+(EngineCore pid=8517)     super().__init__(
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 144, in __init__
+(EngineCore pid=8517)     kv_cache_config = self._initialize_kv_caches(vllm_config)
+(EngineCore pid=8517)                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore pid=8517)     return func(*args, **kwargs)
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 296, in _initialize_kv_caches
+(EngineCore pid=8517)     available_gpu_memory = self.model_executor.determine_available_memory()
+(EngineCore pid=8517)                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/executor/abstract.py", line 149, in determine_available_memory
+(EngineCore pid=8517)     return self.collective_rpc("determine_available_memory")
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 103, in collective_rpc
+(EngineCore pid=8517)     result = run_method(self.driver_worker, method, args, kwargs)
+(EngineCore pid=8517)              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/serial_utils.py", line 510, in run_method
+(EngineCore pid=8517)     return func(*args, **kwargs)
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(EngineCore pid=8517)     return func(*args, **kwargs)
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 519, in determine_available_memory
+(EngineCore pid=8517)     self.model_runner.profile_run()
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6625, in profile_run
+(EngineCore pid=8517)     output = self._dummy_sampler_run(last_hidden_states)
+(EngineCore pid=8517)              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(EngineCore pid=8517)     return func(*args, **kwargs)
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6422, in _dummy_sampler_run
+(EngineCore pid=8517)     raise e
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6393, in _dummy_sampler_run
+(EngineCore pid=8517)     sampler_output = self.sampler(
+(EngineCore pid=8517)                      ^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+(EngineCore pid=8517)     return self._call_impl(*args, **kwargs)
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+(EngineCore pid=8517)     return forward_call(*args, **kwargs)
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/sample/sampler.py", line 103, in forward
+(EngineCore pid=8517)     sampled, processed_logprobs = self.sample(logits, sampling_metadata)
+(EngineCore pid=8517)                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/sample/sampler.py", line 287, in sample
+(EngineCore pid=8517)     random_sampled, processed_logprobs = self.topk_topp_sampler(
+(EngineCore pid=8517)                                          ^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+(EngineCore pid=8517)     return self._call_impl(*args, **kwargs)
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+(EngineCore pid=8517)     return forward_call(*args, **kwargs)
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/sample/ops/topk_topp_sampler.py", line 182, in forward_cuda
+(EngineCore pid=8517)     return flashinfer_sample(logits.contiguous(), k, p, generators), None
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/sample/ops/topk_topp_sampler.py", line 508, in flashinfer_sample
+(EngineCore pid=8517)     next_token_ids = flashinfer.sampling.top_k_top_p_sampling_from_logits(
+(EngineCore pid=8517)                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/flashinfer/api_logging.py", line 2333, in _auto_dump_wrapper
+(EngineCore pid=8517)     return _inner(*args, **kwargs)
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/flashinfer/sampling.py", line 1547, in top_k_top_p_sampling_from_logits
+(EngineCore pid=8517)     masked_logits = top_k_mask_logits(logits, top_k)
+(EngineCore pid=8517)                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/flashinfer/api_logging.py", line 2333, in _auto_dump_wrapper
+(EngineCore pid=8517)     return _inner(*args, **kwargs)
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/flashinfer/sampling.py", line 1974, in top_k_mask_logits
+(EngineCore pid=8517)     return get_sampling_module().top_k_mask_logits(
+(EngineCore pid=8517)            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/flashinfer/sampling.py", line 68, in get_sampling_module
+(EngineCore pid=8517)     module = gen_sampling_module().build_and_load()
+(EngineCore pid=8517)              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/flashinfer/jit/core.py", line 320, in build_and_load
+(EngineCore pid=8517)     self.build()
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/flashinfer/jit/core.py", line 427, in build
+(EngineCore pid=8517)     run_ninja(self.build_dir, self.ninja_path, verbose)
+(EngineCore pid=8517)   File "/opt/venv/lib/python3.12/site-packages/flashinfer/jit/cpp_ext.py", line 382, in run_ninja
+(EngineCore pid=8517)     raise RuntimeError(msg) from e
+(EngineCore pid=8517) RuntimeError: Ninja build failed. Ninja output:
+(EngineCore pid=8517) ninja: Entering directory `/root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling'
+(EngineCore pid=8517) [1/4]  /opt/venv/lib/python3.12/site-packages/nvidia/cu13/bin/nvcc --generate-dependencies-with-compile -MF /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_sampling.cuda.o.d -DPy_LIMITED_API=0x03090000 -D_GLIBCXX_USE_CXX11_ABI=1 -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/thrust -isystem /usr/local/include/python3.12 -isystem /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/tools/util/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/spdlog/include --compiler-options=-fPIC --expt-relaxed-constexpr -static-global-template-stub=false -gencode=arch=compute_89,code=sm_89 -DFLASHINFER_ENABLE_FP8_E8M0 -DFLASHINFER_ENABLE_FP4_E2M1 -std=c++17 --threads=1 -use_fast_math -Xfatbin=-compress-all -DFLASHINFER_ENABLE_F16 -DFLASHINFER_ENABLE_BF16 -DFLASHINFER_ENABLE_FP8_E4M3 -DFLASHINFER_ENABLE_FP8_E5M2 -DNDEBUG -O3 -c /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/sampling.cu -o /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_sampling.cuda.o 
+(EngineCore pid=8517) FAILED: [code=1] /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_sampling.cuda.o 
+(EngineCore pid=8517)  /opt/venv/lib/python3.12/site-packages/nvidia/cu13/bin/nvcc --generate-dependencies-with-compile -MF /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_sampling.cuda.o.d -DPy_LIMITED_API=0x03090000 -D_GLIBCXX_USE_CXX11_ABI=1 -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/thrust -isystem /usr/local/include/python3.12 -isystem /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/tools/util/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/spdlog/include --compiler-options=-fPIC --expt-relaxed-constexpr -static-global-template-stub=false -gencode=arch=compute_89,code=sm_89 -DFLASHINFER_ENABLE_FP8_E8M0 -DFLASHINFER_ENABLE_FP4_E2M1 -std=c++17 --threads=1 -use_fast_math -Xfatbin=-compress-all -DFLASHINFER_ENABLE_F16 -DFLASHINFER_ENABLE_BF16 -DFLASHINFER_ENABLE_FP8_E4M3 -DFLASHINFER_ENABLE_FP8_E5M2 -DNDEBUG -O3 -c /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/sampling.cu -o /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_sampling.cuda.o 
+(EngineCore pid=8517) In file included from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/extended_data_types.h:26,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/builtin.h:26,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/dialect.h:25,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/attributes.h:26,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/assert.h:25,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/__cccl_config:15,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub/cub/config.cuh:12,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub/cub/cub.cuh:13,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/include/flashinfer/sampling.cuh:26,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/sampling.cu:16:
+(EngineCore pid=8517) /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/cuda_toolkit.h:41:8: error: #error "CUDA compiler and CUDA toolkit headers are incompatible, please check your include paths"
+(EngineCore pid=8517)    41 | #      error "CUDA compiler and CUDA toolkit headers are incompatible, please check your include paths"
+(EngineCore pid=8517)       |        ^~~~~
+(EngineCore pid=8517) [2/4]  /opt/venv/lib/python3.12/site-packages/nvidia/cu13/bin/nvcc --generate-dependencies-with-compile -MF /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_renorm.cuda.o.d -DPy_LIMITED_API=0x03090000 -D_GLIBCXX_USE_CXX11_ABI=1 -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/thrust -isystem /usr/local/include/python3.12 -isystem /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/tools/util/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/spdlog/include --compiler-options=-fPIC --expt-relaxed-constexpr -static-global-template-stub=false -gencode=arch=compute_89,code=sm_89 -DFLASHINFER_ENABLE_FP8_E8M0 -DFLASHINFER_ENABLE_FP4_E2M1 -std=c++17 --threads=1 -use_fast_math -Xfatbin=-compress-all -DFLASHINFER_ENABLE_F16 -DFLASHINFER_ENABLE_BF16 -DFLASHINFER_ENABLE_FP8_E4M3 -DFLASHINFER_ENABLE_FP8_E5M2 -DNDEBUG -O3 -c /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/renorm.cu -o /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_renorm.cuda.o 
+(EngineCore pid=8517) FAILED: [code=1] /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_renorm.cuda.o 
+(EngineCore pid=8517)  /opt/venv/lib/python3.12/site-packages/nvidia/cu13/bin/nvcc --generate-dependencies-with-compile -MF /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_renorm.cuda.o.d -DPy_LIMITED_API=0x03090000 -D_GLIBCXX_USE_CXX11_ABI=1 -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/thrust -isystem /usr/local/include/python3.12 -isystem /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/tools/util/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/spdlog/include --compiler-options=-fPIC --expt-relaxed-constexpr -static-global-template-stub=false -gencode=arch=compute_89,code=sm_89 -DFLASHINFER_ENABLE_FP8_E8M0 -DFLASHINFER_ENABLE_FP4_E2M1 -std=c++17 --threads=1 -use_fast_math -Xfatbin=-compress-all -DFLASHINFER_ENABLE_F16 -DFLASHINFER_ENABLE_BF16 -DFLASHINFER_ENABLE_FP8_E4M3 -DFLASHINFER_ENABLE_FP8_E5M2 -DNDEBUG -O3 -c /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/renorm.cu -o /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_renorm.cuda.o 
+(EngineCore pid=8517) In file included from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/extended_data_types.h:26,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/builtin.h:26,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/dialect.h:25,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/attributes.h:26,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/assert.h:25,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/__cccl_config:15,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__internal/atomic.h:13,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/detail/__config:14,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/type_traits:14,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include/cooperative_groups/details/info.h:167,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include/cooperative_groups.h:55,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/include/flashinfer/air_top_p.cuh:22,
+(EngineCore pid=8517)                  from /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/renorm.cu:16:
+(EngineCore pid=8517) /opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include/cuda/std/__cccl/cuda_toolkit.h:41:8: error: #error "CUDA compiler and CUDA toolkit headers are incompatible, please check your include paths"
+(EngineCore pid=8517)    41 | #      error "CUDA compiler and CUDA toolkit headers are incompatible, please check your include paths"
+(EngineCore pid=8517)       |        ^~~~~
+(EngineCore pid=8517) [3/4]  /opt/venv/lib/python3.12/site-packages/nvidia/cu13/bin/nvcc --generate-dependencies-with-compile -MF /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_flashinfer_sampling_binding.cuda.o.d -DPy_LIMITED_API=0x03090000 -D_GLIBCXX_USE_CXX11_ABI=1 -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/cub -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/libcudacxx/include -I/opt/venv/lib/python3.12/site-packages/flashinfer/data/cccl/thrust -isystem /usr/local/include/python3.12 -isystem /opt/venv/lib/python3.12/site-packages/nvidia/cu13/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/tvm_ffi/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/cutlass/tools/util/include -isystem /opt/venv/lib/python3.12/site-packages/flashinfer/data/spdlog/include --compiler-options=-fPIC --expt-relaxed-constexpr -static-global-template-stub=false -gencode=arch=compute_89,code=sm_89 -DFLASHINFER_ENABLE_FP8_E8M0 -DFLASHINFER_ENABLE_FP4_E2M1 -std=c++17 --threads=1 -use_fast_math -Xfatbin=-compress-all -DFLASHINFER_ENABLE_F16 -DFLASHINFER_ENABLE_BF16 -DFLASHINFER_ENABLE_FP8_E4M3 -DFLASHINFER_ENABLE_FP8_E5M2 -DNDEBUG -O3 -c /opt/venv/lib/python3.12/site-packages/flashinfer/data/csrc/flashinfer_sampling_binding.cu -o /root/.cache/flashinfer/0.6.16.post3/89/cached_ops/sampling/csrc_flashinfer_sampling_binding.cuda.o 
+(EngineCore pid=8517) ninja: build stopped: subcommand failed.
+(EngineCore pid=8517) 
+[rank0]:[W930 20:39:20.381613747 ProcessGroupNCCL.cpp:1624] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+(APIServer pid=8136) INFO 09-30 20:39:21 [utils.py:615] [shutdown] Process manager: send sigterm to process EngineCore
+(APIServer pid=8136) Traceback (most recent call last):
+(APIServer pid=8136)   File "/opt/venv/bin/vllm", line 10, in <module>
+(APIServer pid=8136)     sys.exit(main())
+(APIServer pid=8136)              ^^^^^^
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/entrypoints/cli/main.py", line 97, in main
+(APIServer pid=8136)     args.dispatch_function(args)
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/entrypoints/cli/serve.py", line 152, in cmd
+(APIServer pid=8136)     uvloop.run(run_server(args))
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/uvloop/__init__.py", line 96, in run
+(APIServer pid=8136)     return __asyncio.run(
+(APIServer pid=8136)            ^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/usr/local/lib/python3.12/asyncio/runners.py", line 195, in run
+(APIServer pid=8136)     return runner.run(main)
+(APIServer pid=8136)            ^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/usr/local/lib/python3.12/asyncio/runners.py", line 118, in run
+(APIServer pid=8136)     return self._loop.run_until_complete(task)
+(APIServer pid=8136)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/uvloop/__init__.py", line 48, in wrapper
+(APIServer pid=8136)     return await main
+(APIServer pid=8136)            ^^^^^^^^^^
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/entrypoints/openai/api_server.py", line 739, in run_server
+(APIServer pid=8136)     await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/entrypoints/openai/api_server.py", line 753, in run_server_worker
+(APIServer pid=8136)     async with build_async_engine_client(
+(APIServer pid=8136)                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/usr/local/lib/python3.12/contextlib.py", line 210, in __aenter__
+(APIServer pid=8136)     return await anext(self.gen)
+(APIServer pid=8136)            ^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/entrypoints/openai/api_server.py", line 127, in build_async_engine_client
+(APIServer pid=8136)     async with build_async_engine_client_from_engine_args(
+(APIServer pid=8136)                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/usr/local/lib/python3.12/contextlib.py", line 210, in __aenter__
+(APIServer pid=8136)     return await anext(self.gen)
+(APIServer pid=8136)            ^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/entrypoints/openai/api_server.py", line 163, in build_async_engine_client_from_engine_args
+(APIServer pid=8136)     async_llm = AsyncLLM.from_vllm_config(
+(APIServer pid=8136)                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 220, in from_vllm_config
+(APIServer pid=8136)     return cls(
+(APIServer pid=8136)            ^^^^
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 149, in __init__
+(APIServer pid=8136)     self.engine_core = EngineCoreClient.make_async_mp_client(
+(APIServer pid=8136)                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(APIServer pid=8136)     return func(*args, **kwargs)
+(APIServer pid=8136)            ^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 139, in make_async_mp_client
+(APIServer pid=8136)     return AsyncMPClient(*client_args)
+(APIServer pid=8136)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(APIServer pid=8136)     return func(*args, **kwargs)
+(APIServer pid=8136)            ^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 990, in __init__
+(APIServer pid=8136)     super().__init__(
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 609, in __init__
+(APIServer pid=8136)     with launch_core_engines(
+(APIServer pid=8136)          ^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=8136)   File "/usr/local/lib/python3.12/contextlib.py", line 144, in __exit__
+(APIServer pid=8136)     next(self.gen)
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/utils.py", line 1206, in launch_core_engines
+(APIServer pid=8136)     wait_for_engine_startup(
+(APIServer pid=8136)   File "/opt/venv/lib/python3.12/site-packages/vllm/v1/engine/utils.py", line 1286, in wait_for_engine_startup
+(APIServer pid=8136)     raise RuntimeError(
+(APIServer pid=8136) RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}

@@ -1,7 +1,7 @@
-"""``inferlint``: the tripwires from the command line.
+"""inferlint: checks an inference server's benchmark run for silent problems (tripwires).
 
-Exit status: 0 all checks passed (warnings allowed), 1 a check failed,
-2 a check could not decide (a series or log line was missing). ``--strict`` turns
+Exit status: 0 every tripwire passed (warnings allowed), 1 a tripwire failed,
+2 a tripwire could not decide (a series or log line was missing). ``--strict`` turns
 warnings into failures.
 """
 
@@ -15,17 +15,18 @@ import subprocess
 import sys
 import textwrap
 import threading
+import time
 from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from . import __version__, bootlog, checks, gpu, report, series, teardown, telemetry
-from .catalog import TRIPWIRES
+from . import __version__, bootlog, checks, gpu, report, series, teardown, telemetry, xray
+from .catalog import TRIPWIRES, lookup
 from .probe import probe
-from .result import CheckResult, Status
+from .result import LABELS, CheckResult, Status
 
-_MARK = {Status.PASS: "PASS", Status.WARN: "WARN", Status.FAIL: "FAIL", Status.UNKNOWN: "????"}
+_MARK = LABELS
 
 
 def _emit(results: Sequence[CheckResult], as_json: bool, strict: bool) -> int:
@@ -49,8 +50,16 @@ def _out(path: str) -> Path:
     return p
 
 
+def _note_version(facts: bootlog.BootFacts) -> None:
+    """Warn on stderr (so --json output stays clean) about an untested vLLM release."""
+    note = bootlog.untested_version(facts)
+    if note:
+        print(f"note: {note}", file=sys.stderr)
+
+
 def _cmd_boot_facts(a: argparse.Namespace) -> int:
     facts = bootlog.parse_file(a.log)
+    _note_version(facts)
     doc = asdict(facts)
     if a.json:
         print(json.dumps(doc, indent=1, default=str))
@@ -71,9 +80,12 @@ def _cmd_boot_facts(a: argparse.Namespace) -> int:
 def _cmd_check_log(a: argparse.Namespace) -> int:
     results: list[CheckResult] = []
     all_facts: list[bootlog.BootFacts] = []
-    for p in a.logs:
+    names = bootlog.labels(a.logs)
+    for p, name in zip(a.logs, names, strict=True):
         text = Path(p).read_text(encoding="utf-8", errors="replace")
         facts = bootlog.parse(text)
+        if not all_facts:
+            _note_version(facts)
         all_facts.append(facts)
         per = [
             checks.check_boot_failure(text),
@@ -92,12 +104,11 @@ def _cmd_check_log(a: argparse.Namespace) -> int:
         if len(a.logs) > 1:
             for r in per:
                 results.append(
-                    CheckResult(r.tripwire, r.status, f"{Path(p).name}: {r.message}", r.evidence)
+                    CheckResult(r.tripwire, r.status, f"{name}: {r.message}", r.evidence)
                 )
         else:
             results.extend(per)
     if len(a.logs) > 1:
-        names = [Path(p).name for p in a.logs]
         results.extend(checks.check_same_pool(all_facts, names))
         results.extend(checks.check_kv_memory_stable(all_facts, names))
     return _emit(results, a.json, a.strict)
@@ -138,15 +149,8 @@ def _cmd_preemption(a: argparse.Namespace) -> int:
 
 def _cmd_rate(a: argparse.Namespace) -> int:
     r = checks.precise_rate(telemetry.load(a.before), telemetry.load(a.after), a.counter)
-    if not a.json and "integer_second_error" in r.evidence:
-        r = CheckResult(
-            r.tripwire,
-            r.status,
-            f"{r.message}; an integer-second timer would say "
-            f"{r.evidence['integer_second_rate_per_s']:.2f} "
-            f"({r.evidence['integer_second_error']:+.2%})",
-            r.evidence,
-        )
+    if not a.json:
+        r = checks.with_timer_comparison(r)
     return _emit([r], a.json, a.strict)
 
 
@@ -278,27 +282,69 @@ def _cmd_report(a: argparse.Namespace) -> int:
         sources=[Path(p).name for p in inputs if p],
     )
     _out(a.out).write_text(report.render(rep), encoding="utf-8")
-    counts = {s: sum(1 for r in rep.results if r.status is s) for s in Status}
-    summary = ", ".join(f"{n} {s.value}" for s, n in counts.items() if n)
-    print(f"{len(rep.results)} checks ({summary}) -> {a.out}")
+    print(f"{_counts(rep.results)} -> {a.out}")
     return 0
 
 
+def _counts(results: Sequence[CheckResult]) -> str:
+    """'8 checks (4 pass, 2 warn, 2 tripwire-failed)'."""
+    counts = {s: sum(1 for r in results if r.status is s) for s in Status}
+    summary = ", ".join(
+        f"{n} {'unknown' if s is Status.UNKNOWN else LABELS[s].lower()}"
+        for s, n in counts.items()
+        if n
+    )
+    return f"{len(results)} checks ({summary})"
+
+
 def _cmd_explain(a: argparse.Namespace) -> int:
-    ids = [i.upper() for i in a.ids] or list(TRIPWIRES)
-    unknown = [i for i in ids if i not in TRIPWIRES]
+    keys = a.ids or list(TRIPWIRES)
+    found = [lookup(k) for k in keys]
+    unknown = [k for k, t in zip(keys, found, strict=True) if t is None]
     if unknown:
-        print(f"unknown tripwire: {', '.join(unknown)} (known: T1-T{len(TRIPWIRES)})")
+        print(
+            f"unknown tripwire: {', '.join(unknown)} "
+            f"(known: T1-T{len(TRIPWIRES)}, or a name such as silent-preemption)"
+        )
         return 2
     width = min(shutil.get_terminal_size((88, 20)).columns, 88)
-    for i in ids:
-        t = TRIPWIRES[i]
-        print(f"{t.id}  {t.name}")
+    for t in found:
+        assert t is not None
+        print(f"{t.id}  {t.name}  ({t.slug})")
         for para in (t.what, "Why it matters: " + t.why):
             print(textwrap.fill(para, width, initial_indent="    ", subsequent_indent="    "))
         print(f"    Check: {t.command}")
         print()
     return 0
+
+
+def _cmd_xray(a: argparse.Namespace) -> int:
+    load = list(a.load)
+    if load and load[0] == "--":
+        load = load[1:]
+    if not load:
+        print("xray needs the load command after --, e.g. -- vllm bench serve ...")
+        return 2
+    out = Path(a.out or time.strftime("xray-%Y%m%d-%H%M%S"))
+    plan = xray.Plan(
+        out=out,
+        load=load,
+        url=a.url,
+        serve=a.serve,
+        boot_log=Path(a.boot_log) if a.boot_log else None,
+        requested=a.requested,
+        bench_result=Path(a.bench_result) if a.bench_result else None,
+        interval_s=a.interval,
+        ready_timeout_s=a.ready_timeout,
+        probe=not a.no_probe,
+        title=a.title,
+    )
+    o = xray.run(plan, say=lambda line: print(line, flush=True))
+    print(_counts(o.results))
+    if o.report is not None:
+        print(f"report: {o.report}")
+    print(f"files:  {out}")
+    return xray.exit_code(o, a.strict)
 
 
 def _cmd_probe(a: argparse.Namespace) -> int:
@@ -383,9 +429,27 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--title", help="report title")
     p.set_defaults(fn=_cmd_report)
 
-    p = add("explain", "explain the tripwires in plain words")
-    p.add_argument("ids", nargs="*", help="e.g. T1 T9; default: all")
+    p = add("explain", "explain the tripwires")
+    p.add_argument("ids", nargs="*", help="codes or names, e.g. T1 falling-ceiling; default: all")
     p.set_defaults(fn=_cmd_explain)
+
+    p = add(
+        "xray",
+        "run a benchmark end to end and check it: start the server (optional), record it "
+        "around the load command, write the report, stop the server",
+    )
+    p.add_argument("-o", "--out", help="folder for every file of the run (default: xray-<time>)")
+    p.add_argument("--serve", help='start the server with this command, e.g. "vllm serve M ..."')
+    p.add_argument("--url", default="http://127.0.0.1:8000", help="the server's address")
+    p.add_argument("--boot-log", help="the running server's boot log (when not using --serve)")
+    p.add_argument("--requested", type=int, help="concurrency asked for (default: from the load)")
+    p.add_argument("--bench-result", help="the load tool's result file (default: found)")
+    p.add_argument("--interval", type=float, default=0.25, help="seconds between readings")
+    p.add_argument("--ready-timeout", type=float, default=900.0, help="seconds to wait for boot")
+    p.add_argument("--no-probe", action="store_true", help="skip the 9 probe requests (T7)")
+    p.add_argument("--title", help="report title")
+    p.add_argument("load", nargs=argparse.REMAINDER, help="-- the load command")
+    p.set_defaults(fn=_cmd_xray)
 
     p = add("probe", "T7: one request, a concurrent burst, then a health check")
     p.add_argument("url")

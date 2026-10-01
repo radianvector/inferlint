@@ -20,6 +20,7 @@ from urllib.parse import quote
 from . import __version__, bootlog, checks
 from .blocks import predict_concurrency
 from .catalog import TRIPWIRES
+from .metricnames import VLLM
 from .result import CheckResult, Status
 from .series import Series
 from .svgchart import Bar, BarChart, Event, Line, RefLine, TimeChart, render_bars, render_time
@@ -74,15 +75,16 @@ _NEEDS = {
     "T12": "need a boot log",
     "T13": "a rule for test scripts",
     "T14": "need a recording and an after reading",
+    "T15": "need the load tool's result file",
 }
 
-_CRASH_TRIPWIRES = {"T7", "T12"}  # the only ones whose Fail means the server itself failed
+_CRASH_TRIPWIRES = {"T7", "T12"}  # the only ones whose failure means the server itself failed
 
 _MEANING = {
     Status.FAIL: (
-        "The tripwire found its problem in this run. A number the run reports, such as "
-        "users served, speed or delay, is not what it seems. Only T7 and T12 are about "
-        "the server crashing; every other Fail is about the measurement.",
+        "The tripwire caught its problem in this run. For T7 and T12 that means the "
+        "server failed. For every other tripwire the server worked, but a number from the "
+        "run (concurrency, throughput or latency) does not mean what it seems.",
         "Read the finding. Fix the setup and run again, or report the number together "
         "with the finding.",
     ),
@@ -105,60 +107,62 @@ _MEANING = {
 _TERMS = (
     (
         "Token",
-        "A piece of text the model reads or writes, about three-quarters of a word on "
-        "average in English. Speed, memory and cost are all counted in tokens.",
+        "The unit of text a model reads and writes, defined by its tokenizer. How much "
+        "text one token covers depends on the model, the tokenizer and the language. "
+        "Throughput, KV cache and cost are all counted in tokens.",
     ),
     (
         "Prompt and output tokens",
-        "Prompt tokens are the text sent to the model. Output tokens are the text it writes back.",
+        "Prompt tokens are the input sent to the model. Output tokens are the tokens it "
+        "generates in reply.",
     ),
-    ("Request", "One question sent to the server, and its answer."),
+    ("Request", "One completion request sent to the server, and its response."),
     (
         "Concurrency",
-        "How many requests are in progress at the same moment. 'Asked for' is how many "
-        "the load tool kept open. 'Running' is how many the server was actually working "
-        "on. The rest wait in a queue.",
+        "The number of requests in progress at the same moment. 'Asked for' is how many "
+        "the load tool kept open. 'Running' is how many the scheduler was actually "
+        "processing. The rest wait in its queue.",
     ),
     (
         "Waiting (queue)",
-        "Requests the server has received but not started, because there is no room "
-        "for them in the KV cache yet.",
+        "Requests the server has accepted but not scheduled, because the KV cache has no "
+        "room for them yet.",
     ),
     (
         "KV cache",
-        "GPU memory where the model keeps its working notes for every request in "
-        "progress, so it does not have to reread the whole text for each new token. A "
-        "request's notes grow as its answer gets longer.",
+        "GPU memory holding the attention keys and values for every token of every "
+        "running request, so they are not recomputed for each new token. A request's KV "
+        "grows with its length.",
     ),
     (
         "KV pool",
-        "The size of the KV cache, in tokens, which vLLM sets aside when it starts. It "
-        "is the GPU memory left after the model and its working buffers are loaded, so "
-        "it can differ from one start to the next (T4, T11).",
+        "The size of the KV cache in tokens, set when vLLM starts from the GPU memory "
+        "left after the model and CUDA graphs are loaded. It can differ from one start "
+        "to the next (T4, T11).",
     ),
     (
         "KV block",
-        "The pool is handed out in fixed-size blocks, like parking spaces. A request "
-        "always takes whole blocks, so even a short one takes a full block. Most models "
-        "use 16-token blocks. Models that mix attention and Mamba layers use blocks of "
-        "hundreds of tokens (T5).",
+        "The allocation unit of the KV cache: a request always holds whole blocks, so "
+        "even a short request holds a full one. The usual size is 16 tokens; models that "
+        "mix attention and Mamba layers use blocks of hundreds of tokens (T5).",
     ),
     (
-        "Reserved block",
-        "vLLM always keeps one block empty, so a pool of N blocks holds requests in "
-        "N - 1 of them (T14).",
+        "Null block",
+        "One block vLLM reserves and never gives to a request, so a pool of N blocks "
+        "holds requests in N - 1 of them (T14).",
     ),
     (
         "Fit in cache (ceiling)",
-        "How many requests of their current size fit when the cache is full. As answers "
-        "grow, each needs more blocks and fewer fit (T9).",
+        "How many requests of their current size fit when the cache is full: "
+        "floor(1 / share), where share is the fraction of the cache one request holds. "
+        "As sequences grow, fewer fit (T9).",
     ),
     (
         "Preemption",
-        "When the cache is full and a running request needs another block, vLLM pauses "
-        "a request and throws its notes away. To continue, the request must re-read "
-        "everything so far to rebuild them. It costs time but writes no error and no "
-        "log line (T1).",
+        "When a running request needs a block and none is free, vLLM evicts a running "
+        "request: it frees that request's KV blocks and later recomputes them from the "
+        "prompt and the output so far. vLLM counts it in vllm:num_preemptions_total and "
+        "writes no log line (T1).",
     ),
     (
         "Output tokens per second",
@@ -198,7 +202,7 @@ _TERMS = (
 
 _ORDER = {Status.FAIL: 0, Status.WARN: 1, Status.UNKNOWN: 2, Status.PASS: 3}
 _LABEL = {
-    Status.FAIL: "Fail",
+    Status.FAIL: "Tripwire failed",
     Status.WARN: "Warning",
     Status.UNKNOWN: "Can't tell",
     Status.PASS: "Pass",
@@ -267,19 +271,21 @@ def build(
     requested: int | None = None,
     title: str | None = None,
     sources: Sequence[str] = (),
+    extra: Sequence[CheckResult] = (),
 ) -> Report:
     """Run every tripwire the given files allow and collect the results.
 
-    ``sources`` names the input files, for the report's "Made from" line.
+    ``sources`` names the input files, for the report's "Made from" line. ``extra`` adds
+    results the files cannot give, from a live run: the probe (T7), the teardown (T2) and
+    the client/server comparison (T15).
     """
     results: list[CheckResult] = []
     boots: list[tuple[str, bootlog.BootFacts]] = []
     boot_s: float | None = None
     many = len(boot_logs) > 1
-    for p in boot_logs:
+    for p, name in zip(boot_logs, bootlog.labels(boot_logs), strict=True):
         text = Path(p).read_text(encoding="utf-8", errors="replace")
         facts = bootlog.parse(text)
-        name = Path(p).name
         if not boots:
             boot_s = _boot_seconds(text, facts.ready_lineno)
         boots.append((name, facts))
@@ -294,21 +300,22 @@ def build(
         facts_list = [f for _, f in boots]
         results.extend(checks.check_same_pool(facts_list, names))
         results.extend(checks.check_kv_memory_stable(facts_list, names))
-    if before is not None and after is not None:
-        results.append(checks.check_no_preemption(before, after))
-        results.append(checks.precise_rate(before, after))
-    usable: int | None = None
-    if series is not None:
-        if after is not None:
-            t14 = checks.check_null_block(series, after)
-            results.append(t14)
-            inferred = t14.evidence.get("inferred_usable_blocks")
-            if t14.status is Status.PASS and isinstance(inferred, int):
-                usable = inferred
-        results.append(checks.concurrency_ceiling(series, usable))
-        if requested:
-            primary = boots[0][1] if boots else None
-            results.append(checks.check_concurrency_reached(series, requested, primary))
+    # The last result per tripwire: the teardown's T2, not the start-of-run gate's.
+    latest = {r.tripwire: r for r in extra}
+    have = {r.tripwire for r in results}
+    results.extend(r for t, r in latest.items() if t not in have)
+    results.extend(
+        run_checks(
+            before=before,
+            after=after,
+            series=series,
+            requested=requested,
+            facts=boots[0][1] if boots else None,
+        )
+    )
+    t14 = next((r for r in results if r.tripwire == "T14"), None)
+    inferred = t14.evidence.get("inferred_usable_blocks") if t14 else None
+    usable = inferred if t14 and t14.status is Status.PASS and isinstance(inferred, int) else None
     now = _dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z").strip()
     summary = _summarize(before, after, series)
     summary.boot_s = boot_s
@@ -325,6 +332,34 @@ def build(
         summary=summary,
         sources=list(sources),
     )
+
+
+def run_checks(
+    *,
+    before: Snapshot | None,
+    after: Snapshot | None,
+    series: Series | None,
+    requested: int | None,
+    facts: bootlog.BootFacts | None = None,
+) -> list[CheckResult]:
+    """The tripwires a run's readings and recording allow: T1, T10, T14, T9, T8."""
+    results: list[CheckResult] = []
+    if before is not None and after is not None:
+        results.append(checks.check_no_preemption(before, after))
+        results.append(checks.precise_rate(before, after))
+    if series is None:
+        return results
+    usable: int | None = None
+    if after is not None:
+        t14 = checks.check_null_block(series, after)
+        results.append(t14)
+        inferred = t14.evidence.get("inferred_usable_blocks")
+        if t14.status is Status.PASS and isinstance(inferred, int):
+            usable = inferred
+    results.append(checks.concurrency_ceiling(series, usable))
+    if requested:
+        results.append(checks.check_concurrency_reached(series, requested, facts))
+    return results
 
 
 def _summarize(before: Snapshot | None, after: Snapshot | None, s: Series | None) -> Summary:
@@ -347,18 +382,18 @@ def _summarize(before: Snapshot | None, after: Snapshot | None, s: Series | None
         sm.span_s = span_s(before, after)[0]
     try:
         for reason in _REASONS:
-            n = counter_delta(before, after, "vllm:request_success_total", finished_reason=reason)
+            n = counter_delta(before, after, VLLM.request_success, finished_reason=reason)
             if n is not None:
                 sm.finished[reason] = int(n)
-        out = counter_delta(before, after, checks.GENERATION_TOKENS)
+        out = counter_delta(before, after, VLLM.generation_tokens)
         sm.output_tokens = None if out is None else int(out)
-        prompt = counter_delta(before, after, "vllm:prompt_tokens_total")
+        prompt = counter_delta(before, after, VLLM.prompt_tokens)
         sm.prompt_tokens = None if prompt is None else int(prompt)
-        pre = counter_delta(before, after, checks.PREEMPTIONS)
+        pre = counter_delta(before, after, VLLM.preemptions)
         sm.preemptions = None if pre is None else int(pre)
-        sm.mean_latency_s = _mean(before, after, "vllm:e2e_request_latency_seconds")
-        sm.mean_first_token_s = _mean(before, after, "vllm:time_to_first_token_seconds")
-        sm.mean_queue_s = _mean(before, after, "vllm:request_queue_time_seconds")
+        sm.mean_latency_s = _mean(before, after, VLLM.e2e_latency)
+        sm.mean_first_token_s = _mean(before, after, VLLM.first_token)
+        sm.mean_queue_s = _mean(before, after, VLLM.queue_time)
     except ServerRestarted:
         sm = Summary(
             peak_running=sm.peak_running,
@@ -675,8 +710,9 @@ def _story(rep: Report) -> str:
     if sm.preemptions:
         times = "once" if sm.preemptions == 1 else f"{sm.preemptions:,} times"
         out.append(
-            f"It paused a running request to make room {times} (preemption); each one "
-            "waited, then rebuilt its notes before carrying on. Its log does not mention this."
+            f"It preempted a running request {times} to free KV cache: each one went back "
+            "to the queue and later recomputed its prompt and output so far. The server log "
+            "does not mention this."
         )
     return " ".join(out)
 
@@ -783,13 +819,13 @@ def _status_note(rep: Report) -> str:
     crashed = sorted({r.tripwire for r in fails} & _CRASH_TRIPWIRES, key=_tw_num)
     if crashed:
         text = (
-            f"{' and '.join(crashed)} failed: the server itself did not work. The other "
-            "Fails are about the measurement."
+            f"{' and '.join(crashed)}: the server itself failed. Any other failed tripwire "
+            "is about the measurement."
         )
     else:
         text = (
-            "A Fail means a tripwire caught its problem in this run, so some numbers from "
-            "it cannot be taken at face value. It is about the measurement, not a crash."
+            "The server worked; the failed tripwires are about the measurement. Some "
+            "numbers from this run cannot be taken at face value."
         )
         sm = rep.summary
         if sm.done and not sm.finished.get("error"):
@@ -804,7 +840,8 @@ def _status_glossary() -> str:
         for s in sorted(_ORDER, key=lambda s: _ORDER[s])
     )
     return (
-        '<details class="gloss"><summary>What Pass, Warning, Fail and Can\'t tell mean</summary>'
+        '<details class="gloss"><summary>What Pass, Warning, Tripwire failed and Can\'t tell '
+        "mean</summary>"
         '<div class="tablewrap"><table class="meanings"><thead><tr>'
         '<th scope="col">Result</th><th scope="col">What it means</th>'
         '<th scope="col">What to do</th></tr></thead>'
@@ -1060,13 +1097,14 @@ def _boot_table(rep: Report) -> str:
 
 def _guide() -> str:
     items = "".join(
-        f'<li><div class="g-head"><span class="tw">{t.id}</span>{escape(t.name)}</div>'
+        f'<li><div class="g-head"><span class="tw">{t.id}</span>{escape(t.name)}'
+        f'<span class="slug">{escape(t.slug)}</span></div>'
         f'<p>{escape(t.what)}</p><p class="why">{escape(t.why)}</p>'
         f"<code>{escape(t.command)}</code></li>"
         for t in TRIPWIRES.values()
     )
     return (
-        '<section class="guide" id="guide"><h2>The fourteen tripwires</h2>'
+        f'<section class="guide" id="guide"><h2>The {len(TRIPWIRES)} tripwires</h2>'
         '<p class="note">Each one is a way an inference benchmark can report a wrong '
         "number without raising an error.</p>"
         f'<ol class="g-list">{items}</ol></section>'
@@ -1092,6 +1130,8 @@ def render(rep: Report, *, standalone: bool = True) -> str:
     if rep.requested:
         meta.append(f"concurrency asked for: {rep.requested}")
     meta_html = " · ".join(escape(m) for m in meta)
+    note = bootlog.untested_version(boot) if boot is not None else None
+    note_html = f'<p class="version-note">{escape(note)}</p>' if note else ""
     charts = _charts(rep) + _pools_chart(rep)
     logo = _LOGO.replace("<svg ", '<svg class="logo" aria-hidden="true" ', 1)
     body = (
@@ -1099,7 +1139,7 @@ def render(rep: Report, *, standalone: bool = True) -> str:
         '<header class="top"><div class="bar">'
         f'<div class="brand">{logo}inferlint</div>{_theme_toggle()}</div>'
         f"<h1>{escape(rep.title)}</h1>"
-        f'<p class="meta">{meta_html}</p></header>'
+        f'<p class="meta">{meta_html}</p>{note_html}</header>'
         f"{_happened(rep)}"
         '<section class="results" aria-labelledby="h-results">'
         f'<h2 id="h-results">Results</h2>{_verdict(rep)}{_status_note(rep)}'

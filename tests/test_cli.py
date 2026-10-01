@@ -30,7 +30,7 @@ def test_check_log_exit_codes(fx: Path, capsys: pytest.CaptureFixture[str]) -> N
     code, out = run(capsys, "check-log", "--strict", str(fx / "boot_fp8_triton.log"))
     assert code == 1  # T5 warns: block size forced
     code, out = run(capsys, "check-log", str(fx / "boot_spec_backend_override.log"))
-    assert code == 1 and "[ T6] FAIL" in out and "[ T7] FAIL" in out
+    assert code == 1 and "[ T6] TRIPWIRE-FAILED" in out and "[ T7] TRIPWIRE-FAILED" in out
 
 
 def test_check_log_across_boots(fx: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -78,4 +78,4 @@ def test_series(fx: Path, capsys: pytest.CaptureFixture[str]) -> None:
         "32",
     )
     assert code == 1
-    assert "[T14] PASS" in out and "[ T9] PASS" in out and "[ T8] FAIL" in out
+    assert "[T14] PASS" in out and "[ T9] PASS" in out and "[ T8] TRIPWIRE-FAILED" in out

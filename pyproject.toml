@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "inferlint"
-version = "0.1.1"
+version = "0.2.0"
 description = "Measures what your inference server actually did—and flags what it didn't tell you."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,12 +13,17 @@ authors = [{ name = "RadianVector", email = "hello@radianvector.com" }]
 keywords = ["vllm", "llm", "inference", "benchmark", "prometheus", "gpu"]
 classifiers = [
   "Development Status :: 3 - Alpha",
+  "Environment :: Console",
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: System :: Benchmark",
   "Typing :: Typed",
 ]
@@ -29,7 +34,8 @@ Homepage = "https://radianvector.com/open-source/"
 Company = "https://radianvector.com/"
 Source = "https://github.com/radianvector/inferlint"
 Issues = "https://github.com/radianvector/inferlint/issues"
-Documentation = "https://github.com/radianvector/inferlint/blob/main/docs/tripwires.md"
+Documentation = "https://radianvector.github.io/inferlint/"
+Changelog = "https://github.com/radianvector/inferlint/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.9", "pyright>=1.1.390"]

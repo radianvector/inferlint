@@ -2,6 +2,6 @@
 
 from .result import CheckResult, Status, TripwireFailed
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = ["CheckResult", "Status", "TripwireFailed", "__version__"]
