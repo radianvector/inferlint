@@ -5,47 +5,116 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>inferlint</title>
 <meta name="description" content="inferlint measures what your inference server actually did, and flags what it didn't tell you.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="inferlint: asked for 32 at once, the server ran 10">
+<meta property="og:description" content="inferlint measures what your inference server actually did, and flags what it didn't tell you. Tested on vLLM 0.28, 0.29 and 0.30.">
+<meta property="og:url" content="https://radianvector.github.io/inferlint/">
+<meta property="og:image" content="https://radianvector.github.io/inferlint/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Cdefs%3E%3ClinearGradient id=%22inferlint-g%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe14d%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ff5c1f%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22url%28%23inferlint-g%29%22/%3E%3Cpath d=%22M4 18h7l3-9 4 15 3-6h7%22 fill=%22none%22 stroke=%22%2314110f%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
 <style>
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;src:url(fonts/inter-latin-wght-normal.woff2) format('woff2')}
 :root{
   --page:#fbfbfc;--surface:#ffffff;--ink:#0d0f12;--ink-2:#474d55;--muted:#616871;
-  --hair:rgba(13,15,18,.09);--accent:#1b62d4;--hover:rgba(27,98,212,.06);--code-bg:#f3f4f7;
-  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
+  --hair:rgba(13,15,18,.09);--accent:#1b62d4;--wash:rgba(27,98,212,.06);--code-bg:#f3f4f7;
+  --term-bg:#12151a;--term-ink:#e4e7eb;--t-pass:#3fc43f;--t-warn:#fab219;--t-fail:#ff7a74;
+  --sans:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root{color-scheme:dark;
   --page:#08090a;--surface:#0f1113;--ink:#f4f5f7;--ink-2:#b2b7be;--muted:#8d939b;
-  --hair:rgba(255,255,255,.09);--accent:#5fa0ff;--hover:rgba(95,160,255,.08);--code-bg:#15181c;}}
+  --hair:rgba(255,255,255,.09);--accent:#5fa0ff;--wash:rgba(95,160,255,.08);--code-bg:#15181c;}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--page);color:var(--ink);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
-.wrap{max-width:760px;margin:0 auto;padding:40px 16px 64px;display:flex;flex-direction:column;gap:28px}
+a{color:var(--accent)}
+.wrap{max-width:900px;margin:0 auto;padding:36px 16px 64px;display:flex;flex-direction:column;gap:26px}
 .brand{display:flex;align-items:center;gap:10px;font:700 13px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
 .brand svg{width:28px;height:28px}
-h1{margin:0;font-size:clamp(28px,5vw,40px);line-height:1.2;letter-spacing:-.01em;font-weight:600}
-p{margin:0;color:var(--ink-2)}
-code{font-family:var(--mono);font-size:14px;background:var(--code-bg);border:1px solid var(--hair);border-radius:8px;padding:10px 14px;display:block;overflow-x:auto}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+h1{margin:0;font-size:clamp(28px,5vw,42px);line-height:1.15;letter-spacing:-.015em;font-weight:650;max-width:22ch}
+.lede{margin:0;color:var(--ink-2);font-size:17px;max-width:62ch}
+.chart{margin:0;border:1px solid var(--hair);border-radius:14px;background:var(--surface);overflow:hidden}
+.chart img{display:block;width:100%;height:auto}
+.chart figcaption{padding:10px 16px 14px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--hair)}
+.stats{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.stats li{border-top:2px solid var(--ink);padding-top:10px;display:flex;flex-direction:column;gap:2px}
+.stats b{font-size:30px;line-height:1.1;font-weight:650;font-variant-numeric:tabular-nums}
+.stats span{color:var(--ink-2);font-size:14px}
+h2{margin:0;font-size:22px;letter-spacing:-.01em}
+pre{margin:0;padding:14px 16px;border-radius:10px;overflow-x:auto;font:13px/1.6 var(--mono)}
+pre.cmd{background:var(--code-bg);border:1px solid var(--hair);color:var(--ink)}
+pre.out{background:var(--term-bg);color:var(--term-ink)}
+pre .c{color:var(--muted)}
+.s-pass{color:var(--t-pass);font-weight:700}.s-warn{color:var(--t-warn);font-weight:700}.s-fail{color:var(--t-fail);font-weight:700}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
 .cards a{display:flex;flex-direction:column;gap:6px;padding:18px;border:1px solid var(--hair);border-radius:14px;background:var(--surface);color:inherit;text-decoration:none}
-.cards a:hover{background:var(--hover);border-color:var(--accent)}
+.cards a:hover{background:var(--wash);border-color:var(--accent)}
 .cards b{font-size:18px;color:var(--accent)}
 .cards span{color:var(--ink-2);font-size:15px}
+.note{margin:0;color:var(--ink-2);font-size:15px}
 footer{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;color:var(--muted);border-top:1px solid var(--hair);padding-top:16px}
-footer a{color:var(--accent)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe14d"/><stop offset="1" stop-color="#ff5c1f"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lg)"/><path d="M4 18h7l3-9 4 15 3-6h7" fill="none" stroke="#14110f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>inferlint</div>
   <h1>inferlint measures what your inference server actually did—and flags what it didn't tell you.</h1>
-  <p>It reads a vLLM server's start-up log and counters around a benchmark, measures achieved concurrency, preemptions, KV-cache use, GPU state and timing, and checks the run for 14 known problems. It works alongside whatever load tool you already use.</p>
-  <code>pipx install inferlint</code>
-  <nav class="cards" aria-label="Pages">
-    <a href="tutorial.html"><b>Tutorial</b><span>A GPU run step by step, and how to try inferlint without a GPU, using one recorded vLLM run.</span></a>
-    <a href="example-report.html"><b>Example report</b><span>The HTML report inferlint made for that run: what happened, every verdict, and charts of what the server did.</span></a>
+  <p class="lede">Around a vLLM benchmark it reads the server's boot log and counters, measures achieved concurrency, preemptions, KV-cache use, GPU state and timing, and checks the run for 15 known problems. It works with the load tool you already use.</p>
+
+  <figure class="chart">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="img/hook-dark.png">
+      <img src="img/hook-light.png" width="1600" height="900" alt="Requests over a 93-second run: the load tool kept 32 open, the server never ran more than 10 at once, the rest waited, and 22 preemptions happened with no log line.">
+    </picture>
+    <figcaption>vLLM 0.28 on an RTX 4090, a 27B model, 32 requests at once, 1,000 output tokens each. The same run on vLLM 0.29 ran at most 10 at once with 21 preemptions; on 0.30, 11 at once with 22.</figcaption>
+  </figure>
+
+  <ul class="stats">
+    <li><b>10 of 32</b><span>requests ran at once; the benchmark said 32 (T8)</span></li>
+    <li><b>22</b><span>preemptions, and no line about them in the server log (T1)</span></li>
+    <li><b>10 → 7</b><span>the most that fit, falling as answers grew (T9)</span></li>
+  </ul>
+
+  <h2>One command around your benchmark</h2>
+  <pre class="cmd"><span class="c"># install</span>
+pipx install inferlint
+
+<span class="c"># start the server, record it while the benchmark runs, check it, stop it</span>
+inferlint xray -o run/ --serve "vllm serve MODEL" -- vllm bench serve --model MODEL --max-concurrency 32 ...</pre>
+  <pre class="out">== is the GPU free?
+[ T2] <span class="s-pass">PASS</span>  2 consecutive clear readings
+== start the server (output in run/boot.log)
+== boot log
+[T12] <span class="s-pass">PASS</span>  no failure in log
+[ T5] <span class="s-warn">WARN</span>  attention block size forced to 784 tokens (requested 16); each request's KV is allocated in 784-token units
+[ T6] <span class="s-pass">PASS</span>  nothing to check: the server was started without --attention-backend, so vLLM chose its own (FLASH_ATTN) and nothing could be ignored; there was no draft model either
+== probe: one request, then 8 at once
+[ T7] <span class="s-pass">PASS</span>  1 + 8 concurrent requests served, server alive
+== load: vllm bench serve --model MODEL ... --max-concurrency 32 --save-result --result-dir run --result-filename bench.json
+<span class="c">… the benchmark's own output</span>
+== checks
+[ T1] <span class="s-fail">TRIPWIRE-FAILED</span>  21 preemptions during the run
+[T10] <span class="s-pass">PASS</span>  314.99 tokens/s over 101.590s; an integer-second timer would say 313.73 (-0.40%)
+[T14] <span class="s-pass">PASS</span>  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block
+[ T9] <span class="s-warn">WARN</span>  ceiling moved between 5 and 10 as requests grew (one request held 9.5% to 19.0% of the cache); concurrency was not a constant of this run
+[ T8] <span class="s-fail">TRIPWIRE-FAILED</span>  requested 32 concurrent, server never ran more than 10
+[T15] <span class="s-pass">PASS</span>  client and server agree: 32 requests, 32,000 output tokens
+== stop the server
+[ T2] <span class="s-pass">PASS</span>  2 consecutive clear readings
+12 checks (8 pass, 2 warn, 2 tripwire-failed)
+report: run/report.html
+files:  run</pre>
+  <p class="note">A second run of the same test on vLLM 0.28, with paths and the load command shortened. Tested on vLLM 0.28, 0.29 and 0.30. No GPU at hand? The <a href="tutorial.html#no-gpu">tutorial</a> runs every check on the recorded files in two minutes.</p>
+
+  <nav class="cards" aria-label="Documentation">
+    <a href="tutorial.html"><b>Tutorial</b><span>Try the recorded run without a GPU, then check your own. With a 3D view of the KV cache.</span></a>
+    <a href="https://github.com/radianvector/inferlint/blob/main/docs/tripwires.md"><b>Reference</b><span>All 15 tripwires: the symptom, why it changes results, and the check. Plain text.</span></a>
+    <a href="example-report.html"><b>Example report</b><span>The HTML report for the recorded run: what happened, every verdict, and charts.</span></a>
   </nav>
+
   <footer>
     <a href="https://github.com/radianvector/inferlint">GitHub</a>
     <a href="https://pypi.org/project/inferlint/">PyPI</a>
+    <a href="https://github.com/radianvector/inferlint/blob/main/CHANGELOG.md">Changelog</a>
     <a href="https://radianvector.com/open-source/">RadianVector open source</a>
     <span>Apache-2.0</span>
   </footer>

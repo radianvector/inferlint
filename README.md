@@ -1,24 +1,96 @@
 # inferlint
 
+[![CI](https://github.com/radianvector/inferlint/actions/workflows/ci.yml/badge.svg)](https://github.com/radianvector/inferlint/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/inferlint)](https://pypi.org/project/inferlint/)
+[![Python](https://img.shields.io/pypi/pyversions/inferlint)](https://pypi.org/project/inferlint/)
+[![License](https://img.shields.io/github/license/radianvector/inferlint)](https://github.com/radianvector/inferlint/blob/main/LICENSE)
+
 **inferlint measures what your inference server actually did—and flags what it didn't
 tell you.**
 
 Measure achieved concurrency, preemptions, KV-cache behavior, GPU state, timing quality,
 and other signals that can silently invalidate inference results.
 
-Serving benchmarks fail quietly. vLLM preempts requests and logs nothing. A config boots
-cleanly and dies on its first request. The KV pool you measured yesterday is not the one
-you got today. A cleanup script stops the API server and leaves the engine holding the
-GPU. None of these raise an error, and all of them change the numbers.
+A serving benchmark can be wrong without an error. On vLLM 0.28, 0.29 and 0.30, a
+preempted request moves a counter and writes no log line. A config can start cleanly and
+fail on its first request. Two starts with the same flags can size different KV pools.
+Killing the API server can leave the engine process holding the GPU. None of these raise
+an error, and each changes the numbers.
 
-You run `inferlint` around a benchmark test. It reads the server's start-up log and
-counters, measures what happened, and flags each of these problems when it occurs. It
-does not start the server or send the load, so it works with the tools you already use.
+inferlint runs around a benchmark. It reads the server's boot log and Prometheus
+counters, measures what happened, and flags each of these problems when it occurs. Your
+load tool (`vllm bench serve` or any other) sends the requests; inferlint checks what the
+server did with them.
 
-The [tutorial](https://radianvector.github.io/inferlint/tutorial.html) walks through a GPU
-run step by step and shows how to try inferlint without a GPU. The
-[example report](https://radianvector.github.io/inferlint/example-report.html) is the HTML
-page it made for the run below.
+[Tutorial](https://radianvector.github.io/inferlint/tutorial.html) ·
+[Example report](https://radianvector.github.io/inferlint/example-report.html) ·
+[Reference](https://github.com/radianvector/inferlint/blob/main/docs/tripwires.md) ·
+[Changelog](https://github.com/radianvector/inferlint/blob/main/CHANGELOG.md)
+
+## Try it in 30 seconds, without a GPU
+
+The repository includes the files from a recorded run:
+
+```bash
+pipx install inferlint
+git clone --depth 1 https://github.com/radianvector/inferlint && cd inferlint
+inferlint series tests/fixtures/vllm-0.28/live/run.series.jsonl \
+    --snapshot tests/fixtures/vllm-0.28/live/after.snapshot.json --requested 32
+```
+
+```console
+[T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block
+[ T9] WARN  ceiling moved between 7 and 10 as requests grew (one request held 9.5% to 14.3% of the cache); concurrency was not a constant of this run
+[ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 10
+```
+
+## Check your own run with one command
+
+```bash
+inferlint xray -o run/ --serve "vllm serve MODEL --max-model-len 16384" \
+    -- vllm bench serve --model MODEL --dataset-name random --random-input-len 88 \
+       --random-output-len 1000 --ignore-eos --num-prompts 32 --max-concurrency 32
+```
+
+Output from the RTX 4090 run described below, on vLLM 0.28 (paths and the load command
+shortened, the benchmark's own output left out):
+
+```console
+== is the GPU free?
+[ T2] PASS  2 consecutive clear readings
+== start the server (output in run/boot.log)
+== boot log
+[T12] PASS  no failure in log
+[ T5] WARN  attention block size forced to 784 tokens (requested 16); each request's KV is allocated in 784-token units
+[ T6] PASS  nothing to check: the server was started without --attention-backend, so vLLM chose its own (FLASH_ATTN) and nothing could be ignored; there was no draft model either
+== probe: one request, then 8 at once
+[ T7] PASS  1 + 8 concurrent requests served, server alive
+== load: vllm bench serve --model MODEL ... --max-concurrency 32 --save-result --result-dir run --result-filename bench.json
+== checks
+[ T1] TRIPWIRE-FAILED  21 preemptions during the run
+[T10] PASS  314.99 tokens/s over 101.590s; an integer-second timer would say 313.73 (-0.40%)
+[T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block
+[ T9] WARN  ceiling moved between 5 and 10 as requests grew (one request held 9.5% to 19.0% of the cache); concurrency was not a constant of this run
+[ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 10
+[T15] PASS  client and server agree: 32 requests, 32,000 output tokens
+== stop the server
+[ T2] PASS  2 consecutive clear readings
+12 checks (8 pass, 2 warn, 2 tripwire-failed)
+report: run/report.html
+files:  run
+```
+
+`xray` checks that the GPU is free, starts the server and saves its boot log, sends 9
+probe requests, records the server's counters and gauges around the load command after
+`--`, runs every tripwire that applies, and writes `run/report.html` and
+`run/results.json`. It always stops the server at the end, also after a failure or
+Ctrl-C. Without `--serve` it attaches to a server that is already running (`--url`,
+`--boot-log`). Exit status: 0 when every tripwire passed, 1 when one failed or the run did
+not complete, 2 when one could not decide.
+
+For `vllm bench serve`, `xray` adds `--save-result` and compares the benchmark's own
+counts with the server's (T15), and reads `--max-concurrency` as the concurrency asked
+for (T8).
 
 ## One run, measured
 
@@ -27,13 +99,13 @@ CUDA graphs on. 32 concurrent requests, 1,000 output tokens each:
 
 ```console
 $ inferlint preemption before.json after.json
-[ T1] FAIL  22 preemptions during the run
+[ T1] TRIPWIRE-FAILED  22 preemptions during the run
 $ grep -ci preempt boot.log
 0
 $ inferlint series run.series.jsonl --snapshot after.json --requested 32
 [T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block
 [ T9] WARN  ceiling moved between 7 and 10 as requests grew (one request held 9.5% to 14.3% of the cache); concurrency was not a constant of this run
-[ T8] FAIL  requested 32 concurrent, server never ran more than 10
+[ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 10
 ```
 
 - The client held 32 requests in flight. The server never ran more than 10 at once.
@@ -51,7 +123,7 @@ $ pkill -9 -f "vllm[ ]serve"; sleep 20
 $ ps -eo pid,ppid,rss,args | grep -E "[V]LLM::|[v]llm serve"
    1030     423 2733144 VLLM::EngineCore
 $ inferlint gpu-inspect          # the GPU's model and memory lines are left out here
-[ T2] FAIL  card not clear; refusing to boot. ... 21768 MiB used, 1 server processes alive
+[ T2] TRIPWIRE-FAILED  card not clear; refusing to boot. ... 21768 MiB used, 1 server processes alive
 $ inferlint teardown
 target  pid=1030     VLLM::EngineCore
 (pkill -f 'vllm serve' would miss 1 and wrongly hit 0)
@@ -59,33 +131,71 @@ target  pid=1030     VLLM::EngineCore
 ```
 
 The engine outlived its parent and kept 21.3 GiB of the card. The usual cleanup pattern
-cannot see it, and the next boot would have loaded a second copy into what was left.
-The raw files from this run are in
-[`tests/fixtures/vllm-0.28/live/`](https://github.com/radianvector/inferlint/tree/main/tests/fixtures/vllm-0.28/live),
-and `tests/test_live.py` pins every number above.
+cannot see it, and the next start would have loaded a second copy into what was left.
+The same run on vLLM 0.29 and 0.30 gave the same findings (below). The `xray` output
+above is a second run on 0.28: 21 preemptions instead of 22, and a lowest ceiling of 5
+instead of 7, with the same tripwires failing and warning. The raw files are in
+[`tests/fixtures/`](https://github.com/radianvector/inferlint/tree/main/tests/fixtures),
+and `tests/test_live.py` and `tests/test_compat.py` pin every number.
+
+## Tested versions
+
+Each tripwire on each tested release, on an RTX 4090 (WSL2, driver 616.56) with the
+model and load above:
+
+| tripwire | what the run showed | 0.28 (two runs) | 0.29 | 0.30 |
+|---|---|---|---|---|
+| T1 silent-preemption | preemptions; none in the log | live: 22 / 21 | live: 21 | live: 22 |
+| T2 orphaned-engine | MiB the engine kept after the API server was killed | live: 21,768 | live: 21,522 | live: 21,872 |
+| T4 pool-size-jump | KV pool, starts with the same flags | recorded: a 9.4% jump | live: same in 2 starts | live: same in 2 starts |
+| T5 large-kv-blocks | attention block size, tokens | live: 784 | live: 784 | live: 784 |
+| T6 backend-ignored | requested backend not applied to the drafter | recorded | not tested | not tested |
+| T7 crash-after-ready | probe after ready | live (healthy); a crash recorded | live (healthy) | live (healthy) |
+| T8 concurrency-not-reached | most requests running at once, of 32 | live: 10 / 10 | live: 10 | live: 11; admission control |
+| T9 falling-ceiling | concurrency ceiling, highest → lowest | live: 10 → 7 / 10 → 5 | live: 10 → 5 | live: 11 → 7 |
+| T10 integer-second-timer | rate from exact timestamps | live | live | live |
+| T11 kv-memory-drift | KV memory, starts with the same flags | recorded: drift | live: same in 2 starts | live: same in 2 starts |
+| T12 unexplained-failure | real start-up failures named | live: 1; recorded: 1 | live: 1 | live: 3 |
+| T14 null-block | usable of exported KV blocks | live: 42 of 43 | live: 42 of 43 | live: 47 of 48 |
+| T15 client-server-mismatch | load tool's counts against the server's | live: agree | live: agree | live: agree; also with 16 rejected |
+
+T3 and T13 concern shell scripts, not vLLM, and do not depend on its version. The
+counts differ a little from run to run: 0.28 shows both of its runs.
+
+**live**: measured on a running server of that version. **recorded**: tested on recorded
+files from that version. A boot log from a release not listed here makes inferlint print
+a warning, since log lines and metric names change between releases.
+
+Setting up these runs on WSL with pip-installed CUDA hit five start-up failures, and T12
+named the cause of each (details in [docs/tripwires.md](https://github.com/radianvector/inferlint/blob/main/docs/tripwires.md#t12-start-up-failure-without-a-cause)).
+The fixes: `VLLM_USE_V2_MODEL_RUNNER=0` on 0.29; on 0.29 and 0.30, a CUDA 13.0 compiler
+matching torch's CUDA runtime for FlashInfer's kernel builds; on 0.28,
+`VLLM_USE_FLASHINFER_SAMPLER=0`, as in the recorded run.
 
 ## What it checks
 
-| id | trap | command |
-|---|---|---|
-| T1 | preemption is silent: a counter moves, no log line is written | `inferlint preemption BEFORE AFTER` |
-| T2 | `pkill -f "vllm serve"` misses the renamed `VLLM::EngineCore` | `inferlint teardown`, `inferlint gpu-inspect` |
-| T3 | `pkill -f` in a shell one-liner kills the shell | `inferlint teardown` |
-| T4 | the KV pool is drawn per boot, in discrete levels | `inferlint check-log BOOT...` |
-| T5 | hybrid models force a large attention block (the allocation unit) | `inferlint check-log` |
-| T6 | the requested attention backend is not applied to the speculative drafter | `inferlint check-log` |
-| T7 | a config boots, then dies on its first request | `inferlint probe URL` |
-| T8 | requested concurrency is not achieved concurrency | `inferlint series --requested N` |
-| T9 | the concurrency ceiling is `floor(1 / share)`, and it falls as requests grow | `inferlint series` |
-| T10 | integer-second timers are worth several percent | `inferlint rate BEFORE AFTER` |
-| T11 | KV memory differs between boots of one config | `inferlint check-log BOOT...` |
-| T12 | boot failures recorded without a reason | `inferlint check-log` |
-| T13 | a killed campaign's waiter adopts the next server | [docs/orchestration.md](https://github.com/radianvector/inferlint/blob/main/docs/orchestration.md) |
-| T14 | the KV usage gauge's denominator is `num_gpu_blocks - 1` | `inferlint series --snapshot` |
+| id | name | trap | command |
+|---|---|---|---|
+| T1 | silent-preemption | preemption writes no log line, only a counter moves | `inferlint preemption BEFORE AFTER` |
+| T2 | orphaned-engine | `pkill -f "vllm serve"` misses the renamed `VLLM::EngineCore` | `inferlint teardown`, `inferlint gpu-inspect` |
+| T3 | cleanup-self-kill | `pkill -f` in a shell one-liner kills the shell | `inferlint teardown` |
+| T4 | pool-size-jump | the KV pool is sized per start, in discrete steps | `inferlint check-log BOOT...` |
+| T5 | large-kv-blocks | hybrid models force a large attention block (the allocation unit) | `inferlint check-log` |
+| T6 | backend-ignored | the requested attention backend is not applied to the speculative drafter | `inferlint check-log` |
+| T7 | crash-after-ready | a config starts, then dies on its first request | `inferlint probe URL`, `inferlint check-log` |
+| T8 | concurrency-not-reached | requested concurrency is not achieved concurrency | `inferlint series --requested N` |
+| T9 | falling-ceiling | the concurrency ceiling is `floor(1 / share)`, and it falls as requests grow | `inferlint series` |
+| T10 | integer-second-timer | integer-second timers are off by up to a second at each end | `inferlint rate BEFORE AFTER` |
+| T11 | kv-memory-drift | KV memory differs between starts with the same flags | `inferlint check-log BOOT...` |
+| T12 | unexplained-failure | start-up failures recorded without a cause | `inferlint check-log` |
+| T13 | stale-waiter | a killed campaign's waiter adopts the next server | [docs/orchestration.md](https://github.com/radianvector/inferlint/blob/main/docs/orchestration.md) |
+| T14 | null-block | the KV usage gauge counts out of `num_gpu_blocks - 1` | `inferlint series --snapshot` |
+| T15 | client-server-mismatch | the load tool's counts differ from the server's | `inferlint xray` |
 
 Each is described in [docs/tripwires.md](https://github.com/radianvector/inferlint/blob/main/docs/tripwires.md)
 with its symptom, why it changes results, and a command that reproduces it from files in
-this repository.
+this repository. `inferlint explain T9` (or `inferlint explain falling-ceiling`) prints
+the same in the terminal.
 
 ## Install
 
@@ -100,14 +210,16 @@ activate. `uv tool install inferlint` does the same. To use it as a library, ins
 into your project's environment with `pip install inferlint` (see
 [Use it from Python](#use-it-from-python)).
 
-Python 3.10+, no dependencies. `teardown`, and the free-GPU check in `gpu-inspect`, find
-the server's processes through `/proc`, so they need Linux (or WSL), where vLLM runs.
-Everything else runs anywhere.
+Python 3.10+, no dependencies. `teardown`, `xray --serve`, and the free-GPU check in
+`gpu-inspect` find the server's processes through `/proc`, so they need Linux (or WSL),
+where vLLM runs. Everything else runs anywhere.
 
-## Use
+## Use the commands one at a time
 
-A test with inferlint takes as long as your benchmark. It checks one test at a time; it
-is not a monitor for a server that runs for days (Prometheus and Grafana do that job).
+`xray` runs the sequence below for you. The separate commands are for scripts that need
+to control each step. A test with inferlint takes as long as your benchmark. It checks
+one test at a time; it is not a monitor for a server that runs for days (Prometheus and
+Grafana do that job).
 
 Use two terminals on the GPU machine, in the same folder: **A** runs the server, **B**
 runs everything else.
@@ -155,9 +267,12 @@ inferlint teardown                     # stops every vLLM process, waits until t
   numbers. [docs/orchestration.md](https://github.com/radianvector/inferlint/blob/main/docs/orchestration.md)
   covers scripts that run many tests.
 
-Exit status is 0 when every check passes (warnings allowed), 1 when one fails, and 2
-when one cannot decide because a series or a log line was missing. A missing series
-is never read as zero. `--json` gives machine-readable results; `--strict` fails on
+A failed tripwire prints as `TRIPWIRE-FAILED`: the tripwire caught its problem. For T7
+and T12 that means the server failed; for every other tripwire the server worked, but a
+number from the run does not mean what it seems. Exit status is 0 when every tripwire
+passes (warnings allowed), 1 when one fails, and 2 when one cannot decide because a
+series or a log line was missing. A missing series is never read as zero. `--json` gives
+machine-readable results (`"status": "fail"` for a failed tripwire); `--strict` fails on
 warnings.
 
 ### The report
@@ -167,8 +282,7 @@ account of what happened (how long the test ran, requests finished and failed, t
 generated, time spent queued, which tripwires were checked and which need other
 files), then the verdicts, charts of what the server did over time, the boot facts, and
 a guide to every tripwire. Two collapsible glossaries explain the terms (token, KV
-pool, block, preemption) and what Pass, Warning, Fail and Can't tell mean: a Fail is a
-finding about the measurement, not a crash, except for T7 and T12.
+pool, block, preemption) and what Pass, Warning, Tripwire failed and Can't tell mean.
 
 The page fetches nothing, so it opens offline and can be attached to a ticket as it is.
 It has a light/dark switch, every chart has a data table, and hovering (or the arrow
@@ -176,7 +290,7 @@ keys) reads values at any moment.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/radianvector/inferlint/main/docs/report-dark.png">
-  <img alt="The report for the live run: what happened, the headline numbers, and 2 failures and 2 warnings" src="https://raw.githubusercontent.com/radianvector/inferlint/main/docs/report.png">
+  <img alt="The report for the live run: what happened, the headline numbers, 2 failed tripwires and 2 warnings" src="https://raw.githubusercontent.com/radianvector/inferlint/main/docs/report.png">
 </picture>
 
 **See a full example.**
@@ -197,8 +311,6 @@ inferlint report -o example-report.html --title "vLLM 0.28 on an RTX 4090" --req
     --series tests/fixtures/vllm-0.28/live/run.series.jsonl
 ```
 
-`inferlint explain T9` prints the same plain-English explanation in the terminal.
-
 ## Use it from Python
 
 Install it into your project's environment with `pip install inferlint`. Every check
@@ -217,7 +329,7 @@ after = telemetry.scrape(url)
 
 result = checks.check_no_preemption(before, after)
 print(result.status.value, result.message)  # fail 22 preemptions during the run
-result.raise_for_status()  # raises TripwireFailed on a Fail or a Can't tell
+result.raise_for_status()  # raises TripwireFailed on a failed tripwire or a Can't tell
 
 facts = bootlog.parse_file("boot.log")
 print(facts.attention_block_size, facts.kv_pool_tokens)  # 784 26093
@@ -232,16 +344,21 @@ them too.
 | `bootlog` | the facts in a start-up log (`parse_file`) |
 | `telemetry` | the server's counters (`scrape`, `load`) |
 | `series` | recordings made during a run (`watch`, `read`) |
-| `checks` | the checks, each returning a `CheckResult` |
+| `checks` | the tripwires, each returning a `CheckResult` |
+| `catalog` | each tripwire's code, name and explanation (`TRIPWIRES`, `lookup`) |
 | `probe` | the first-request check (T7) |
 | `gpu` | which GPU, its family and memory (`read_gpus`) |
 | `teardown` | stopping the server and waiting for a free GPU (Linux) |
 | `report` | the HTML report (`build`, `render`) |
+| `benchresult` | a `vllm bench serve --save-result` file (`load`) |
+| `xray` | the whole sequence in one call (`run`, `Plan`) |
+| `metricnames` | every metric name inferlint reads (`VLLM`) |
 
 ## How it is tested
 
-- **Real evidence.** Fixtures are vLLM 0.28 boot logs and `/metrics` output from an
-  RTX 4090, with paths removed. Each check is tested against the case it exists for.
+- **Real evidence.** Fixtures are vLLM 0.28, 0.29 and 0.30 boot logs, `/metrics` output
+  and benchmark results from an RTX 4090, with paths removed. Each check is tested
+  against the case it exists for.
 - **Every check is watched failing.** `tests/test_mutations.py` changes one number or
   line in real evidence and requires the verdict to flip.
 - **Instruments against ground truth.** The probe runs against a mock server with known
@@ -249,34 +366,27 @@ them too.
   exports. The teardown's process matching runs on a synthetic `/proc` that includes the
   shell one-liner and a bystander. GPU facts are parsed from real `nvidia-smi` output.
 - **Unknown formats are reported, not defaulted.** When a known log line changes format
-  in a new vLLM release, `boot-facts` lists it as unparsed instead of returning a value.
+  in a new vLLM release, `boot-facts` lists it as unparsed instead of returning a value,
+  and a boot log from an untested release prints a warning.
+- **`xray` against a mock server.** The whole sequence runs in the tests against a mock
+  server with known counters, including other traffic (T15) and a server that dies
+  during start-up.
 
-## Develop
+## Contribute
 
-To change the code, work from a clone in a virtual environment of its own, with the
-package installed in editable mode (edits take effect without reinstalling) and the test
-tools added:
-
-```bash
-git clone https://github.com/radianvector/inferlint
-cd inferlint
-python -m venv .venv
-source .venv/bin/activate          # Windows PowerShell: .venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
-pytest -q                          # no GPU needed
-ruff check src tests && ruff format --check src tests && pyright
-```
-
-GitHub Actions runs the last two lines on every push and pull request, on Python 3.10,
-3.11 and 3.12 (see `.github/workflows/ci.yml`). This tests inferlint's own code; it is
-not a GitHub Action for your benchmarks.
+The most useful contribution is a recorded run from a vLLM version or GPU that is not in
+the table above: `inferlint xray -o run/ ...` saves every file needed.
+[CONTRIBUTING.md](https://github.com/radianvector/inferlint/blob/main/CONTRIBUTING.md)
+says how to share it, how to set up the code, and what a new tripwire needs. GitHub
+Actions runs the tests, lint and type checks on every push and pull request, on Python
+3.10 to 3.13. This tests inferlint's own code; it is not a GitHub Action for your
+benchmarks. Security problems: see
+[SECURITY.md](https://github.com/radianvector/inferlint/blob/main/SECURITY.md).
 
 ## Status
 
-Alpha. Every tripwire is tested against recorded vLLM 0.28 evidence. T1, T2, T5, T8, T9,
-T10 and T14 have also been re-measured by this code on a live vLLM 0.28 server. Next: one
-command that runs the whole sequence above, re-verification on the current vLLM release,
-and support for the llama.cpp `/metrics` subset.
+Alpha. Tested live on vLLM 0.28, 0.29 and 0.30 on one GPU model (RTX 4090). Next: more
+GPUs and models from contributed runs, and a second serving engine.
 
 ## About
 

@@ -4,9 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>inferlint Tutorial</title>
-<meta name="description" content="How to use inferlint: a GPU run step by step, and how to try it without a GPU, using one recorded vLLM run.">
+<meta name="description" content="How to use inferlint: try it on a recorded vLLM run without a GPU, then check your own benchmark with one command.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="inferlint tutorial: asked for 32 at once, the server ran 10">
+<meta property="og:description" content="Try inferlint on a recorded vLLM run without a GPU, then check your own benchmark with one command.">
+<meta property="og:url" content="https://radianvector.github.io/inferlint/tutorial.html">
+<meta property="og:image" content="https://radianvector.github.io/inferlint/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Cdefs%3E%3ClinearGradient id=%22inferlint-g%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe14d%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ff5c1f%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22url%28%23inferlint-g%29%22/%3E%3Cpath d=%22M4 18h7l3-9 4 15 3-6h7%22 fill=%22none%22 stroke=%22%2314110f%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
 <style>
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;src:url(fonts/inter-latin-wght-normal.woff2) format('woff2')}
 :root{
   --page:#fbfbfc;--surface:#ffffff;--ink:#0d0f12;--ink-2:#474d55;--muted:#616871;
   --hair:rgba(13,15,18,.09);--grid:rgba(13,15,18,.07);--axis:rgba(13,15,18,.24);
@@ -20,7 +27,7 @@
   --good-bg:rgba(12,163,12,.10);--warning-bg:rgba(250,178,25,.16);
   --critical-bg:rgba(208,59,59,.10);--unknown-bg:rgba(13,15,18,.06);
   --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
-  --display:'Space Grotesk','Inter',-apple-system,'Segoe UI',system-ui,sans-serif;
+  --display:var(--sans);
   --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
@@ -77,6 +84,7 @@ code{font-family:var(--mono);font-size:.88em}
 
 .layout{display:grid;grid-template-columns:minmax(0,1fr);gap:28px}
 main{min-width:0;display:flex;flex-direction:column;gap:80px}
+h3.sub{font-size:20px;margin-top:18px}
 section{display:flex;flex-direction:column;gap:20px;scroll-margin-top:20px}
 
 .toc{border:1px solid var(--hair);border-radius:12px;background:var(--surface)}
@@ -102,6 +110,11 @@ section{display:flex;flex-direction:column;gap:20px;scroll-margin-top:20px}
 .findings li{border-top:2px solid var(--ink);padding-top:10px;display:flex;flex-direction:column;gap:4px}
 .findings .big{font:600 30px/1.1 var(--display);font-variant-numeric:tabular-nums}
 .findings .what{color:var(--ink-2);font-size:14px}
+.paths{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:6px}
+.path{display:flex;flex-direction:column;gap:4px;padding:14px 16px;border:1px solid var(--hair);border-radius:12px;background:var(--surface);color:inherit;text-decoration:none}
+.path:hover{border-color:var(--accent);background:var(--wash)}
+.path b{font:600 16px/1.3 var(--display);color:var(--accent)}
+.path span{font-size:14px;color:var(--ink-2)}
 
 /* cards */
 .card{border:1px solid var(--hair);border-radius:14px;background:var(--surface);padding:clamp(14px,2.4vw,22px);display:flex;flex-direction:column;gap:14px}
@@ -284,6 +297,7 @@ details.tw summary::after{content:"";position:absolute;right:8px;top:17px;width:
 details.tw[open] summary::after{transform:rotate(-135deg)}
 details.tw .id{font:700 12px/1 var(--mono);color:var(--accent)}
 details.tw .nm{font-weight:600}
+details.tw .slug{font:500 11.5px/1 var(--mono);color:var(--muted);margin-left:6px}
 details.tw .cmd{font:500 12px/1.3 var(--mono);color:var(--muted);text-align:right}
 details.tw .body{padding:0 0 16px 54px;display:flex;flex-direction:column;gap:10px;max-width:780px}
 details.tw .body p{color:var(--ink-2)}
@@ -315,11 +329,11 @@ footer{margin-top:72px;padding-top:18px;border-top:1px solid var(--hair);font-si
       <summary>On this page</summary>
       <nav aria-label="On this page"><ol>
         <li><a href="#start"><b>·</b>What it finds</a></li>
+        <li><a href="#no-gpu"><b>1</b>Try the recorded run</a></li>
         <li><a href="#pool"><b>·</b>Why only 10, in 3D</a></li>
-        <li><a href="#gpu-run"><b>A</b>A GPU run, step by step</a></li>
-        <li><a href="#no-gpu"><b>B</b>Try it without a GPU</a></li>
+        <li><a href="#gpu-run"><b>2</b>Check your own run</a></li>
         <li><a href="#results"><b>·</b>Reading a result</a></li>
-        <li><a href="#tripwires"><b>·</b>The 14 checks</a></li>
+        <li><a href="#tripwires"><b>·</b>The 15 tripwires</a></li>
         <li><a href="#cheatsheet"><b>·</b>Cheat sheet</a></li>
       </ol></nav>
     </details>
@@ -354,6 +368,46 @@ footer{margin-top:72px;padding-top:18px;border-top:1px solid var(--hair);font-si
           <li><span class="big num-tab">22</span><span class="what">preemptions. The server log mentions none. <a class="chip" href="#tw-T1">T1</a></span></li>
           <li><span class="big num-tab">10 → 7</span><span class="what">the most that fit, falling as answers grew. <a class="chip" href="#tw-T9">T9</a></span></li>
         </ul>
+
+        <nav class="paths" aria-label="Where to start">
+          <a class="path" href="#no-gpu"><b>Try the recorded run</b><span>2 minutes, no GPU: install, get the files from this run, run the checks.</span></a>
+          <a class="path" href="#gpu-run"><b>Check your own run</b><span>One command around your benchmark: <code>inferlint xray</code>.</span></a>
+        </nav>
+      </section>
+
+      <!-- ============ PART B ============ -->
+      <section id="no-gpu">
+        <p class="eyebrow">Quick start · 2 minutes · no GPU</p>
+        <h2>Try it on the recorded run</h2>
+        <div class="prose">
+          <p>The repository includes the files from the recorded run, so you can run every check on any computer, Linux, macOS or Windows, without a GPU or a server.</p>
+        </div>
+
+        <div class="bstep" id="b1">
+          <h3><b>1</b>Install</h3>
+          <div class="code"><pre><code>pipx install inferlint
+inferlint --help</code></pre></div>
+          <p class="note"><strong>pipx</strong> gives inferlint its own environment and puts the <code>inferlint</code> command on your PATH. There is nothing to activate, and it works from any folder. Plain <code>pip install inferlint</code> works too. Needs Python 3.10 or newer; inferlint has no other dependencies.</p>
+        </div>
+
+        <div class="bstep" id="b2">
+          <h3><b>2</b>Get the recorded run</h3>
+          <div class="code"><pre><code>git clone https://github.com/radianvector/inferlint
+cd inferlint</code></pre></div>
+        </div>
+
+        <div class="bstep" id="b3">
+          <h3><b>3</b>Run the checks on it</h3>
+          <div class="tabs" role="tablist" aria-label="Your terminal">
+            <button type="button" role="tab" id="tab-bash" aria-selected="true" data-os="bash">Linux, macOS, WSL</button>
+            <button type="button" role="tab" id="tab-ps" aria-selected="false" data-os="ps">Windows PowerShell</button>
+          </div>
+          <p class="hint">First, a short name for the folder with the recorded files:</p>
+          <div class="code" data-os="bash"><pre><code>L=tests/fixtures/vllm-0.28/live</code></pre></div>
+          <div class="code" data-os="ps" hidden><pre><code>$L = "tests\fixtures\vllm-0.28\live"</code></pre></div>
+          <div class="cmds" id="b-cmds"></div>
+          <p class="note"><strong>On Windows,</strong> everything here works in PowerShell. <code>teardown</code> needs Linux, because it finds the server's processes the way Linux lists them. <code>gpu-inspect</code> shows the GPU on Windows too, but its free-card check (T2) needs Linux, so there it answers Can't tell. Run those two in WSL, where vLLM runs anyway.</p>
+        </div>
       </section>
 
       <!-- ============ POOL 3D ============ -->
@@ -403,11 +457,48 @@ footer{margin-top:72px;padding-top:18px;border-top:1px solid var(--hair);font-si
 
       <!-- ============ PART A ============ -->
       <section id="gpu-run">
-        <p class="eyebrow">Part A</p>
-        <h2>A GPU run, step by step</h2>
+        <p class="eyebrow">Check your own run</p>
+        <h2>A GPU run with one command</h2>
         <div class="prose">
-          <p>This is the full routine around a benchmark. You need Linux or WSL, an NVIDIA GPU, vLLM, and inferlint installed on the same machine (<a href="#b1">B1</a>). Use two terminals in the same folder: <strong>A</strong> runs the server, <strong>B</strong> runs everything else. inferlint reads the server; your own load tool sends the benchmark's requests.</p>
-          <p>The picture shows what runs when. Click a number to open that step.</p>
+          <p>You need Linux or WSL, an NVIDIA GPU, vLLM, and inferlint installed on the same machine (<a href="#b1">step 1</a> above). <code>inferlint xray</code> starts the server, checks it, records it while your benchmark runs, writes the report and stops the server. Your load tool goes after <code>--</code>; inferlint sends no load of its own.</p>
+        </div>
+        <div class="code"><pre><code>inferlint xray -o run/ --serve "vllm serve $MODEL --max-model-len 16384" \
+    -- vllm bench serve --model "$MODEL" --dataset-name random \
+       --random-input-len 88 --random-output-len 1000 --ignore-eos \
+       --num-prompts 32 --max-concurrency 32</code></pre></div>
+        <p class="see">You'll see (vLLM 0.28 on the RTX 4090 used for this page, shortened)</p>
+        <pre class="out">== is the GPU free?
+[ T2] PASS  2 consecutive clear readings
+== start the server (output in run/boot.log)
+== boot log
+[T12] PASS  no failure in log
+[ T5] WARN  attention block size forced to 784 tokens (requested 16); each request's KV is allocated in 784-token units
+[ T6] PASS  nothing to check: the server was started without --attention-backend, so vLLM chose its own (FLASH_ATTN) and nothing could be ignored; there was no draft model either
+== probe: one request, then 8 at once
+[ T7] PASS  1 + 8 concurrent requests served, server alive
+== load: vllm bench serve --model MODEL ... --max-concurrency 32 --save-result --result-dir run --result-filename bench.json
+…
+== checks
+[ T1] TRIPWIRE-FAILED  21 preemptions during the run
+[T10] PASS  314.99 tokens/s over 101.590s; an integer-second timer would say 313.73 (-0.40%)
+[T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block
+[ T9] WARN  ceiling moved between 5 and 10 as requests grew (one request held 9.5% to 19.0% of the cache); concurrency was not a constant of this run
+[ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 10
+[T15] PASS  client and server agree: 32 requests, 32,000 output tokens
+== stop the server
+[ T2] PASS  2 consecutive clear readings
+12 checks (8 pass, 2 warn, 2 tripwire-failed)
+report: run/report.html
+files:  run</pre>
+        <div class="prose">
+          <p>Above, paths are shortened, the load command is cut, and the benchmark's own output is left out (the <code>…</code> line). This was a second run of the same test as the recorded one, so its counts differ a little: 21 preemptions instead of 22, and a lowest ceiling of 5 instead of 7.</p>
+          <p>Every file lands in <code>run/</code>: the boot log, the before and after readings, the recording, the benchmark's own result file and <code>report.html</code>. The server is stopped at the end even if a step fails or you press Ctrl-C. To check a server that is already running, leave out <code>--serve</code> and give <code>--url</code> and <code>--boot-log</code>.</p>
+          <p>For <code>vllm bench serve</code>, xray adds <code>--save-result</code> so it can compare the benchmark's own counts with the server's (<a href="#tw-T15">T15</a>), and reads <code>--max-concurrency</code> as the concurrency asked for (<a href="#tw-T8">T8</a>).</p>
+        </div>
+
+        <h3 class="sub">Or step by step</h3>
+        <div class="prose">
+          <p>The same routine as separate commands, for scripts that control each step. Use two terminals in the same folder: <strong>A</strong> runs the server, <strong>B</strong> runs everything else. The picture shows what runs when; click a number to open that step.</p>
         </div>
 
         <div class="card">
@@ -518,12 +609,12 @@ kill %1        <span class="c"># stops the watch from step 6</span></code></pre>
 inferlint rate before.json after.json
 inferlint series run.series.jsonl --snapshot after.json --requested 32</code></pre></div>
               <p class="see">You'll see (recorded run)</p>
-              <pre class="out">[ T1] FAIL  22 preemptions during the run
+              <pre class="out">[ T1] TRIPWIRE-FAILED  22 preemptions during the run
 [T10] PASS  341.44 tokens/s over 93.720s; an integer-second timer would say 344.09 (+0.77%)
 [T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block
 [ T9] WARN  ceiling moved between 7 and 10 as requests grew (one request held 9.5% to 14.3% of the cache); concurrency was not a constant of this run
-[ T8] FAIL  requested 32 concurrent, server never ran more than 10</pre>
-              <p>The server finished all 32 requests without errors. The two Fails are about the measurement: at most 10 requests ran at once, and 22 were paused and restarted along the way.</p>
+[ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 10</pre>
+              <p>The server finished all 32 requests without errors. The two failed tripwires are about the measurement: at most 10 requests ran at once, and 22 were paused and restarted along the way.</p>
               <div class="chips">Checks <a class="chip" href="#tw-T1">T1</a><a class="chip" href="#tw-T10">T10</a><a class="chip" href="#tw-T14">T14</a><a class="chip" href="#tw-T9">T9</a><a class="chip" href="#tw-T8">T8</a></div>
             </div>
           </details></li>
@@ -557,48 +648,13 @@ inferlint teardown</code></pre></div>
         </ol>
       </section>
 
-      <!-- ============ PART B ============ -->
-      <section id="no-gpu">
-        <p class="eyebrow">Part B</p>
-        <h2>Try it without a GPU</h2>
-        <div class="prose">
-          <p>The repository includes the four files from the recorded run, so you can try every reading command on any computer in a few minutes.</p>
-        </div>
-
-        <div class="bstep" id="b1">
-          <h3><b>B1</b>Install</h3>
-          <div class="code"><pre><code>pipx install inferlint
-inferlint --help</code></pre></div>
-          <p class="note"><strong>pipx</strong> gives inferlint its own environment and puts the <code>inferlint</code> command on your PATH. There is nothing to activate, and it works from any folder. Plain <code>pip install inferlint</code> works too. Needs Python 3.10 or newer; inferlint has no other dependencies.</p>
-        </div>
-
-        <div class="bstep" id="b2">
-          <h3><b>B2</b>Get the recorded run</h3>
-          <div class="code"><pre><code>git clone https://github.com/radianvector/inferlint
-cd inferlint</code></pre></div>
-        </div>
-
-        <div class="bstep" id="b3">
-          <h3><b>B3</b>Run the checks on it</h3>
-          <div class="tabs" role="tablist" aria-label="Your terminal">
-            <button type="button" role="tab" id="tab-bash" aria-selected="true" data-os="bash">Linux, macOS, WSL</button>
-            <button type="button" role="tab" id="tab-ps" aria-selected="false" data-os="ps">Windows PowerShell</button>
-          </div>
-          <p class="hint">First, a short name for the folder with the recorded files:</p>
-          <div class="code" data-os="bash"><pre><code>L=tests/fixtures/vllm-0.28/live</code></pre></div>
-          <div class="code" data-os="ps" hidden><pre><code>$L = "tests\fixtures\vllm-0.28\live"</code></pre></div>
-          <div class="cmds" id="b-cmds"></div>
-          <p class="note"><strong>On Windows,</strong> everything here works in PowerShell. <code>teardown</code> needs Linux, because it finds the server's processes the way Linux lists them. <code>gpu-inspect</code> shows the GPU on Windows too, but its free-card check (T2) needs Linux, so there it answers Can't tell. Run those two in WSL, where vLLM runs anyway.</p>
-        </div>
-      </section>
-
       <!-- ============ RESULTS ============ -->
       <section id="results">
         <h2>Reading a result</h2>
         <div class="anatomy" aria-label="An example result line, labelled">
           <div class="line">
             <span class="part"><span>[ T1]</span><small>which check</small></span>
-            <span class="part"><span class="fail">FAIL</span><small>the verdict</small></span>
+            <span class="part"><span class="fail">TRIPWIRE-FAILED</span><small>the verdict</small></span>
             <span class="part"><span>22 preemptions during the run</span><small>what it found, in the run's own numbers</small></span>
           </div>
         </div>
@@ -608,7 +664,7 @@ cd inferlint</code></pre></div>
             <table>
               <thead><tr><th scope="col">Verdict</th><th scope="col">What it means</th><th scope="col">What to do</th></tr></thead>
               <tbody>
-                <tr><td><span class="pill fail"><svg viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>Fail</span></td><td>The check found its problem in this run, so a number from the run (users served, speed or delay) needs that context. Only T7 and T12 mean the server itself failed.</td><td>Fix the setup and run again, or report the number together with the finding.</td></tr>
+                <tr><td><span class="pill fail"><svg viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>Tripwire failed</span></td><td>The tripwire caught its problem in this run. For T7 and T12 the server itself failed. For every other tripwire the server worked, but a number from the run (concurrency, speed or delay) does not mean what it seems.</td><td>Fix the setup and run again, or report the number together with the finding.</td></tr>
                 <tr><td><span class="pill warn"><svg viewBox="0 0 16 16"><path d="M8 3.5v6M8 12.2v.3"/></svg>Warning</span></td><td>Nothing is wrong on its own, but a setting or an effect changes how the numbers should be read.</td><td>Keep the warning with the results.</td></tr>
                 <tr><td><span class="pill unknown"><svg viewBox="0 0 16 16"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6 1v.6M8 12.2v.3"/></svg>Can't tell</span></td><td>A counter or log line the check needs was missing. It never counts as a pass. The terminal shows it as <code>????</code>.</td><td>Supply the missing file, or check the vLLM version.</td></tr>
                 <tr><td><span class="pill pass"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg>Pass</span></td><td>The check looked for its problem in this run and did not find it.</td><td>Nothing. A pass covers this run only.</td></tr>
@@ -621,8 +677,8 @@ cd inferlint</code></pre></div>
             <div class="tablewrap"><table>
               <tbody>
                 <tr><td class="n"><code>0</code></td><td>everything passed (warnings allowed)</td></tr>
-                <tr><td class="n"><code>1</code></td><td>a check failed</td></tr>
-                <tr><td class="n"><code>2</code></td><td>a check could not decide</td></tr>
+                <tr><td class="n"><code>1</code></td><td>a tripwire failed</td></tr>
+                <tr><td class="n"><code>2</code></td><td>a tripwire could not decide</td></tr>
               </tbody>
             </table></div>
             <p><code>--strict</code> turns warnings into failures. <code>--json</code> prints the results as JSON, including the evidence behind each one.</p>
@@ -632,8 +688,8 @@ cd inferlint</code></pre></div>
 
       <!-- ============ TRIPWIRES ============ -->
       <section id="tripwires">
-        <h2>The 14 checks</h2>
-        <div class="prose"><p>Grouped by when in a test they apply. Open one for what goes wrong, why it changes your numbers, and the command that checks it. <code>inferlint explain T9</code> prints the same text in the terminal.</p></div>
+        <h2>The 15 tripwires</h2>
+        <div class="prose"><p>Grouped by when in a test they apply. Open one for what goes wrong, why it changes your numbers, and the command that checks it. <code>inferlint explain T9</code> (or <code>inferlint explain falling-ceiling</code>) prints a technical version in the terminal.</p></div>
         <div class="toolbar">
           <button class="btn" type="button" data-tw="open">Open all</button>
           <button class="btn" type="button" data-tw="close">Close all</button>
@@ -648,6 +704,7 @@ cd inferlint</code></pre></div>
           <table>
             <thead><tr><th scope="col">When</th><th scope="col">Command</th><th scope="col">Checks</th></tr></thead>
             <tbody>
+              <tr><td>The whole run, one command</td><td><code>inferlint xray -o run/ --serve "vllm serve …" -- vllm bench serve …</code></td><td>all that apply</td></tr>
               <tr><td>Before starting a server</td><td><code>inferlint gpu-inspect</code></td><td>T2</td></tr>
               <tr><td>After start-up</td><td><code>inferlint check-log boot.log</code></td><td>T5 T6 T12 (T4 T11 with 2+ logs)</td></tr>
               <tr><td>After start-up</td><td><code>inferlint boot-facts boot.log</code></td><td>lists what the log says</td></tr>
@@ -668,7 +725,7 @@ cd inferlint</code></pre></div>
   </div>
 
   <footer>
-    <span>inferlint 0.1.1</span>
+    <span>inferlint 0.2.0</span>
     <span>Data: the recorded run in <a href="https://github.com/radianvector/inferlint/tree/main/tests/fixtures/vllm-0.28/live"><code>tests/fixtures/vllm-0.28/live/</code></a></span>
     <span><a href="https://github.com/radianvector/inferlint">GitHub</a> · <a href="https://pypi.org/project/inferlint/">PyPI</a> · <a href="example-report.html">Example report</a></span>
     <span>Apache-2.0 · <a href="https://radianvector.com/open-source/">RadianVector</a></span>
@@ -676,7 +733,7 @@ cd inferlint</code></pre></div>
 </div>
 
 <script>
-const DATA = {"series":{"t":[0.0,0.26,0.51,0.77,1.03,1.28,1.54,1.8,2.05,2.31,2.57,2.83,3.08,3.34,3.59,3.85,4.11,4.36,4.62,4.88,5.13,5.39,5.65,5.9,6.16,6.42,6.67,6.93,7.19,7.45,7.71,7.97,8.23,8.48,8.74,9.0,9.25,9.51,9.77,10.02,10.28,10.54,10.79,11.05,11.31,11.56,11.82,12.08,12.34,12.62,12.87,13.13,13.39,13.64,13.9,14.15,14.41,14.67,14.92,15.18,15.44,15.7,15.95,16.21,16.47,16.72,16.98,17.24,17.49,17.75,18.01,18.26,18.52,18.77,19.03,19.29,19.55,19.8,20.06,20.32,20.57,20.83,21.09,21.34,21.6,21.86,22.11,22.37,22.63,22.88,23.14,23.4,23.65,23.91,24.17,24.42,24.68,24.94,25.19,25.45,25.71,25.96,26.22,26.48,26.74,26.99,27.25,27.5,27.76,28.02,28.27,28.53,28.79,29.04,29.3,29.56,29.81,30.07,30.34,30.59,30.85,31.11,31.37,31.63,31.89,32.14,32.4,32.65,32.91,33.17,33.42,33.68,33.94,34.19,34.45,34.71,34.96,35.22,35.47,35.73,35.99,36.24,36.5,36.76,37.01,37.27,37.52,37.78,38.04,38.29,38.55,38.81,39.06,39.32,39.57,39.83,40.09,40.34,40.6,40.86,41.11,41.37,41.62,41.88,42.14,42.4,42.65,42.91,43.16,43.42,43.68,43.93,44.19,44.44,44.7,44.96,45.21,45.47,45.74,45.99,46.25,46.51,46.76,47.02,47.27,47.53,47.79,48.04,48.3,48.56,48.81,49.07,49.33,49.58,49.84,50.09,50.35,50.61,50.86,51.12,51.38,51.63,51.89,52.15,52.4,52.66,52.92,53.17,53.43,53.68,53.94,54.2,54.45,54.71,54.97,55.22,55.48,55.74,55.99,56.25,56.51,56.77,57.03,57.28,57.54,57.8,58.05,58.31,58.56,58.82,59.08,59.33,59.59,59.84,60.1,60.36,60.61,60.87,61.13,61.38,61.64,61.89,62.15,62.41,62.66,62.92,63.18,63.43,63.69,63.95,64.2,64.46,64.71,64.97,65.23,65.48,65.74,66.0,66.25,66.51,66.76,67.02,67.28,67.53,67.79,68.05,68.3,68.56,68.81,69.07,69.33,69.58,69.84,70.09,70.35,70.61,70.86,71.12,71.37,71.63,71.89,72.14,72.4,72.66,72.91,73.17,73.43,73.68,73.94,74.2,74.45,74.71,74.97,75.22,75.48,75.73,75.99,76.25,76.5,76.76,77.02,77.27,77.53,77.78,78.04,78.3,78.55,78.81,79.06,79.32,79.58,79.83,80.09,80.34,80.6,80.86,81.11,81.37,81.62,81.88,82.14,82.39,82.65,82.91,83.16,83.42,83.67,83.93,84.19,84.44,84.7,84.96,85.21,85.47,85.73,85.98,86.24,86.49,86.75,87.01,87.26,87.52,87.78,88.03,88.29,88.55,88.8,89.06,89.31,89.57,89.83,90.08,90.34,90.6,90.85,91.11,91.37,91.62,91.88,92.14,92.4,92.65,92.91,93.17,93.42],"run":[0,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,6,8,6,7,8,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,2,9,7,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,9,7,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,3,5,5,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,8,9,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,7,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,4,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,2],"wait":[0,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,26,24,26,25,24,24,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,24,17,18,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,14,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,13,15,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,15,12,12,6,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,2,5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"kv":[0,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,36,42,35,41,42,39,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,13,41,34,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,37,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,39,41,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,18,22,22,42,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,34,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,40,40,40,40,40,40,40,42,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,22,35,31,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,22,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,16,13,13,13,13,13,13,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,10,10,10,10,10,10,10],"pre":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,4,5,5,6,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,13,13,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,16,16,16,16,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22],"gen":[144,145,255,365,485,595,705,825,935,1045,1165,1275,1385,1505,1615,1725,1845,1955,2065,2185,2295,2405,2515,2635,2745,2855,2975,3085,3195,3315,3425,3535,3655,3765,3875,3985,4105,4215,4325,4435,4545,4665,4775,4885,4995,5115,5225,5335,5445,5565,5685,5795,5905,6015,6125,6235,6345,6455,6575,6685,6795,6905,7015,7103,7109,7116,7128,7135,7158,7221,7305,7389,7473,7557,7641,7725,7809,7893,7970,8054,8138,8222,8306,8383,8467,8551,8635,8719,8796,8880,8964,9048,9132,9216,9229,9231,9257,9336,9435,9534,9642,9741,9849,9948,10056,10155,10263,10362,10461,10569,10668,10776,10875,10983,11082,11181,11289,11388,11496,11595,11703,11802,11910,11976,12054,12174,12284,12394,12514,12624,12734,12854,12964,13074,13184,13304,13414,13524,13644,13754,13864,13974,14094,14204,14314,14424,14534,14654,14764,14874,14984,15104,15214,15324,15434,15544,15664,15774,15883,15906,15913,15947,16046,16145,16253,16352,16451,16559,16658,16757,16865,16964,17063,17162,17270,17369,17468,17576,17675,17783,17882,17981,18080,18188,18287,18386,18485,18593,18610,18613,18613,18663,18772,18871,18979,19078,19177,19285,19384,19492,19591,19699,19798,19897,20005,20104,20212,20311,20410,20518,20617,20725,20824,20923,21031,21130,21229,21319,21395,21493,21603,21713,21833,21943,22053,22163,22283,22393,22503,22613,22733,22843,22953,23063,23183,23293,23403,23513,23623,23743,23853,23963,24073,24183,24303,24413,24512,24622,24732,24842,24962,25072,25182,25287,25301,25373,25481,25580,25679,25787,25886,25985,26093,26192,26291,26390,26498,26597,26696,26804,26903,27002,27101,27209,27308,27407,27506,27614,27713,27812,27911,27998,28002,28060,28144,28228,28312,28396,28480,28564,28648,28732,28816,28900,28984,29068,29152,29236,29320,29404,29481,29565,29649,29733,29817,29901,29985,30069,30136,30185,30221,30260,30296,30332,30371,30407,30446,30482,30518,30557,30593,30629,30668,30704,30740,30779,30815,30851,30890,30926,30962,31001,31037,31073,31112,31148,31184,31223,31259,31295,31334,31370,31406,31442,31481,31517,31553,31592,31628,31664,31703,31739,31775,31814,31850,31886,31925,31961,31990,32016,32042,32066,32092,32118,32142]},"tripwires":[{"id":"T1","name":"Silent preemption","what":"When the GPU memory that holds requests in progress (the KV cache) fills up, vLLM pauses a request and throws away its working notes. Before the request can continue, it has to re-read everything so far to rebuild them. vLLM writes nothing in its log when this happens. Only a counter moves.","why":"Each paused request waits and then repeats work, so it finishes later than it should. Timing results include this hidden delay, and long requests suffer most. Searching the log for it finds nothing, even when it happened.","command":"inferlint preemption before.json after.json"},{"id":"T2","name":"Engine left running","what":"The usual way to stop vLLM, pkill -f \"vllm serve\", only reaches the front-end process. The engine process, which holds the model in GPU memory, renames itself VLLM::EngineCore and can keep running after the front end is gone.","why":"The next test starts on a GPU that is already mostly full and produces wrong numbers with no error. One low memory reading is not proof the GPU is free.","command":"inferlint teardown  |  inferlint gpu-inspect"},{"id":"T3","name":"Cleanup kills itself","what":"Running pkill -f \"vllm serve\" inside a one-line shell command also kills that shell, because the shell's own command line contains the same words.","why":"The rest of the cleanup never runs and the script ends with no message.","command":"inferlint teardown"},{"id":"T4","name":"Memory pool changes between starts","what":"Each time vLLM starts, it measures free memory and sets aside a pool for requests in progress. The same settings can get a different pool on the next start, and pool sizes come in fixed steps.","why":"Two runs with identical settings can differ by a whole step (9.4% in the recorded example), which looks like a real speed difference and is not one.","command":"inferlint check-log boot1.log boot2.log"},{"id":"T5","name":"Large memory blocks","what":"Models that mix attention layers with Mamba layers make vLLM hand out cache memory in large blocks, hundreds of tokens each, instead of 16-token blocks.","why":"A short request still occupies a whole block, so far fewer requests fit than the pool's token count suggests.","command":"inferlint check-log boot.log"},{"id":"T6","name":"Requested backend ignored","what":"The attention backend is the code that does the model's main calculation on the GPU. vLLM has several, such as FlashAttention, FlashInfer and Triton, and you can choose one when you start the server with --attention-backend. This checks that vLLM really used the one you asked for. With speculative decoding on, the small draft model that helps the main model picks its own backend and quietly ignores your choice.","why":"In the recorded case Triton was requested, but the draft model picked FlashInfer, which crashed on the first request, while the log showed Triton in use.","command":"inferlint check-log boot.log"},{"id":"T7","name":"Ready, then crashes","what":"A server can start, announce that it is ready, and crash as soon as the first real request arrives.","why":"A check that only waits for 'ready' passes a server that cannot serve anything.","command":"inferlint probe http://127.0.0.1:8000"},{"id":"T8","name":"Fewer users than requested","what":"A load tool can keep 32 requests open, but the server may only work on a few at a time and queue the rest.","why":"A result labelled '32 users' can describe a 10-user server.","command":"inferlint series run.series.jsonl --requested 32"},{"id":"T9","name":"Capacity shrinks as answers grow","what":"The number of requests that fit at once is 1 divided by the share of cache one request holds. Each answer takes more cache as it gets longer, so fewer fit as a run goes on, and the server evicts some to make room.","why":"A run has no single 'maximum concurrency'. It changes while the run is going, and every drop causes preemptions (T1).","command":"inferlint series run.series.jsonl"},{"id":"T10","name":"Whole-second timers","what":"Timing a run with whole seconds, such as $(date +%s), can be off by almost a second either way.","why":"On a 30-second test that is about 3%, enough to flip a close comparison.","command":"inferlint rate before.json after.json"},{"id":"T11","name":"KV memory varies between starts","what":"The memory left for the pool after loading the model and capturing CUDA graphs can differ slightly from one start to the next.","why":"A small difference can drop the pool by a whole step (T4).","command":"inferlint check-log boot1.log boot2.log"},{"id":"T12","name":"Failures with no reason","what":"When a server fails to start, simple log searches often miss the real error and record a blank reason.","why":"A failure without a reason cannot be fixed, repeated or trusted.","command":"inferlint check-log boot.log"},{"id":"T13","name":"Old script adopts the new server","what":"A test script stopped while it waits for its server can mistake the next script's server for its own, report it ready, then shut it down.","why":"The next test dies partway through for no visible reason.","command":"see docs/orchestration.md"},{"id":"T14","name":"One block is reserved","what":"vLLM reports N cache blocks but always keeps one empty. Its usage gauge counts out of N - 1.","why":"Capacity worked out from the reported block count is slightly too high.","command":"inferlint series run.series.jsonl --snapshot after.json"}]};
+const DATA = {"series":{"t":[0.0,0.26,0.51,0.77,1.03,1.28,1.54,1.8,2.05,2.31,2.57,2.83,3.08,3.34,3.59,3.85,4.11,4.36,4.62,4.88,5.13,5.39,5.65,5.9,6.16,6.42,6.67,6.93,7.19,7.45,7.71,7.97,8.23,8.48,8.74,9.0,9.25,9.51,9.77,10.02,10.28,10.54,10.79,11.05,11.31,11.56,11.82,12.08,12.34,12.62,12.87,13.13,13.39,13.64,13.9,14.15,14.41,14.67,14.92,15.18,15.44,15.7,15.95,16.21,16.47,16.72,16.98,17.24,17.49,17.75,18.01,18.26,18.52,18.77,19.03,19.29,19.55,19.8,20.06,20.32,20.57,20.83,21.09,21.34,21.6,21.86,22.11,22.37,22.63,22.88,23.14,23.4,23.65,23.91,24.17,24.42,24.68,24.94,25.19,25.45,25.71,25.96,26.22,26.48,26.74,26.99,27.25,27.5,27.76,28.02,28.27,28.53,28.79,29.04,29.3,29.56,29.81,30.07,30.34,30.59,30.85,31.11,31.37,31.63,31.89,32.14,32.4,32.65,32.91,33.17,33.42,33.68,33.94,34.19,34.45,34.71,34.96,35.22,35.47,35.73,35.99,36.24,36.5,36.76,37.01,37.27,37.52,37.78,38.04,38.29,38.55,38.81,39.06,39.32,39.57,39.83,40.09,40.34,40.6,40.86,41.11,41.37,41.62,41.88,42.14,42.4,42.65,42.91,43.16,43.42,43.68,43.93,44.19,44.44,44.7,44.96,45.21,45.47,45.74,45.99,46.25,46.51,46.76,47.02,47.27,47.53,47.79,48.04,48.3,48.56,48.81,49.07,49.33,49.58,49.84,50.09,50.35,50.61,50.86,51.12,51.38,51.63,51.89,52.15,52.4,52.66,52.92,53.17,53.43,53.68,53.94,54.2,54.45,54.71,54.97,55.22,55.48,55.74,55.99,56.25,56.51,56.77,57.03,57.28,57.54,57.8,58.05,58.31,58.56,58.82,59.08,59.33,59.59,59.84,60.1,60.36,60.61,60.87,61.13,61.38,61.64,61.89,62.15,62.41,62.66,62.92,63.18,63.43,63.69,63.95,64.2,64.46,64.71,64.97,65.23,65.48,65.74,66.0,66.25,66.51,66.76,67.02,67.28,67.53,67.79,68.05,68.3,68.56,68.81,69.07,69.33,69.58,69.84,70.09,70.35,70.61,70.86,71.12,71.37,71.63,71.89,72.14,72.4,72.66,72.91,73.17,73.43,73.68,73.94,74.2,74.45,74.71,74.97,75.22,75.48,75.73,75.99,76.25,76.5,76.76,77.02,77.27,77.53,77.78,78.04,78.3,78.55,78.81,79.06,79.32,79.58,79.83,80.09,80.34,80.6,80.86,81.11,81.37,81.62,81.88,82.14,82.39,82.65,82.91,83.16,83.42,83.67,83.93,84.19,84.44,84.7,84.96,85.21,85.47,85.73,85.98,86.24,86.49,86.75,87.01,87.26,87.52,87.78,88.03,88.29,88.55,88.8,89.06,89.31,89.57,89.83,90.08,90.34,90.6,90.85,91.11,91.37,91.62,91.88,92.14,92.4,92.65,92.91,93.17,93.42],"run":[0,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,6,8,6,7,8,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,2,9,7,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,9,7,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,3,5,5,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,8,9,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,7,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,4,8,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,2],"wait":[0,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,26,24,26,25,24,24,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,24,17,18,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,14,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,13,15,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,15,12,12,6,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,2,5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"kv":[0,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,36,42,35,41,42,39,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,13,41,34,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,37,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,39,41,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,18,22,22,42,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,34,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,40,40,40,40,40,40,40,42,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,41,22,35,31,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,22,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,16,13,13,13,13,13,13,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,10,10,10,10,10,10,10],"pre":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,4,5,5,6,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,13,13,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,16,16,16,16,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22],"gen":[144,145,255,365,485,595,705,825,935,1045,1165,1275,1385,1505,1615,1725,1845,1955,2065,2185,2295,2405,2515,2635,2745,2855,2975,3085,3195,3315,3425,3535,3655,3765,3875,3985,4105,4215,4325,4435,4545,4665,4775,4885,4995,5115,5225,5335,5445,5565,5685,5795,5905,6015,6125,6235,6345,6455,6575,6685,6795,6905,7015,7103,7109,7116,7128,7135,7158,7221,7305,7389,7473,7557,7641,7725,7809,7893,7970,8054,8138,8222,8306,8383,8467,8551,8635,8719,8796,8880,8964,9048,9132,9216,9229,9231,9257,9336,9435,9534,9642,9741,9849,9948,10056,10155,10263,10362,10461,10569,10668,10776,10875,10983,11082,11181,11289,11388,11496,11595,11703,11802,11910,11976,12054,12174,12284,12394,12514,12624,12734,12854,12964,13074,13184,13304,13414,13524,13644,13754,13864,13974,14094,14204,14314,14424,14534,14654,14764,14874,14984,15104,15214,15324,15434,15544,15664,15774,15883,15906,15913,15947,16046,16145,16253,16352,16451,16559,16658,16757,16865,16964,17063,17162,17270,17369,17468,17576,17675,17783,17882,17981,18080,18188,18287,18386,18485,18593,18610,18613,18613,18663,18772,18871,18979,19078,19177,19285,19384,19492,19591,19699,19798,19897,20005,20104,20212,20311,20410,20518,20617,20725,20824,20923,21031,21130,21229,21319,21395,21493,21603,21713,21833,21943,22053,22163,22283,22393,22503,22613,22733,22843,22953,23063,23183,23293,23403,23513,23623,23743,23853,23963,24073,24183,24303,24413,24512,24622,24732,24842,24962,25072,25182,25287,25301,25373,25481,25580,25679,25787,25886,25985,26093,26192,26291,26390,26498,26597,26696,26804,26903,27002,27101,27209,27308,27407,27506,27614,27713,27812,27911,27998,28002,28060,28144,28228,28312,28396,28480,28564,28648,28732,28816,28900,28984,29068,29152,29236,29320,29404,29481,29565,29649,29733,29817,29901,29985,30069,30136,30185,30221,30260,30296,30332,30371,30407,30446,30482,30518,30557,30593,30629,30668,30704,30740,30779,30815,30851,30890,30926,30962,31001,31037,31073,31112,31148,31184,31223,31259,31295,31334,31370,31406,31442,31481,31517,31553,31592,31628,31664,31703,31739,31775,31814,31850,31886,31925,31961,31990,32016,32042,32066,32092,32118,32142]},"tripwires":[{"id":"T1","slug":"silent-preemption","name":"Silent preemption","what":"When the GPU memory that holds requests in progress (the KV cache) fills up, vLLM pauses a request and throws away its working notes. Before the request can continue, it has to re-read everything so far to rebuild them. vLLM writes nothing in its log when this happens. Only a counter moves.","why":"Each paused request waits and then repeats work, so it finishes later than it should. Timing results include this hidden delay, and long requests suffer most. Searching the log for it finds nothing, even when it happened.","command":"inferlint preemption before.json after.json"},{"id":"T2","slug":"orphaned-engine","name":"Orphaned engine process","what":"The usual way to stop vLLM, pkill -f \"vllm serve\", only reaches the front-end process. The engine process, which holds the model in GPU memory, renames itself VLLM::EngineCore and can keep running after the front end is gone.","why":"The next test starts on a GPU that is already mostly full and produces wrong numbers with no error. One low memory reading is not proof the GPU is free.","command":"inferlint teardown  |  inferlint gpu-inspect"},{"id":"T3","slug":"cleanup-self-kill","name":"Cleanup kills its own shell","what":"Running pkill -f \"vllm serve\" inside a one-line shell command also kills that shell, because the shell's own command line contains the same words.","why":"The rest of the cleanup never runs and the script ends with no message.","command":"inferlint teardown"},{"id":"T4","slug":"pool-size-jump","name":"KV pool size jumps between starts","what":"Each time vLLM starts, it measures free memory and sets aside a pool for requests in progress. The same settings can get a different pool on the next start, and pool sizes come in fixed steps.","why":"Two runs with identical settings can differ by a whole step (9.4% in the recorded example), which looks like a real speed difference and is not one.","command":"inferlint check-log boot1.log boot2.log"},{"id":"T5","slug":"large-kv-blocks","name":"Large KV block size","what":"Models that mix attention layers with Mamba layers make vLLM hand out cache memory in large blocks, hundreds of tokens each, instead of 16-token blocks.","why":"A short request still occupies a whole block, so far fewer requests fit than the pool's token count suggests.","command":"inferlint check-log boot.log"},{"id":"T6","slug":"backend-ignored","name":"Requested attention backend ignored","what":"The attention backend is the code that does the model's main calculation on the GPU. vLLM has several, such as FlashAttention, FlashInfer and Triton, and you can choose one when you start the server with --attention-backend. This checks that vLLM really used the one you asked for. With speculative decoding on, the small draft model that helps the main model picks its own backend and quietly ignores your choice.","why":"In the recorded case Triton was requested, but the draft model picked FlashInfer, which crashed on the first request, while the log showed Triton in use.","command":"inferlint check-log boot.log"},{"id":"T7","slug":"crash-after-ready","name":"Crash after ready","what":"A server can start, announce that it is ready, and crash as soon as the first real request arrives.","why":"A check that only waits for 'ready' passes a server that cannot serve anything.","command":"inferlint probe http://127.0.0.1:8000"},{"id":"T8","slug":"concurrency-not-reached","name":"Concurrency not reached","what":"A load tool can keep 32 requests open, but the server may only work on a few at a time and queue the rest.","why":"A result labelled '32 users' can describe a 10-user server.","command":"inferlint series run.series.jsonl --requested 32"},{"id":"T9","slug":"falling-ceiling","name":"Concurrency ceiling falls as sequences grow","what":"The number of requests that fit at once is 1 divided by the share of cache one request holds. Each answer takes more cache as it gets longer, so fewer fit as a run goes on, and the server evicts some to make room.","why":"A run has no single 'maximum concurrency'. It changes while the run is going, and every drop causes preemptions (T1).","command":"inferlint series run.series.jsonl"},{"id":"T10","slug":"integer-second-timer","name":"Integer-second timing","what":"Timing a run with whole seconds, such as $(date +%s), can be off by almost a second either way.","why":"On a 30-second test that is about 3%, enough to flip a close comparison.","command":"inferlint rate before.json after.json"},{"id":"T11","slug":"kv-memory-drift","name":"KV memory budget drifts between starts","what":"The memory left for the pool after loading the model and capturing CUDA graphs can differ slightly from one start to the next.","why":"A small difference can drop the pool by a whole step (T4).","command":"inferlint check-log boot1.log boot2.log"},{"id":"T12","slug":"unexplained-failure","name":"Start-up failure without a cause","what":"When a server fails to start, simple log searches often miss the real error and record a blank reason.","why":"A failure without a reason cannot be fixed, repeated or trusted.","command":"inferlint check-log boot.log"},{"id":"T13","slug":"stale-waiter","name":"Stale waiter adopts the next server","what":"A test script stopped while it waits for its server can mistake the next script's server for its own, report it ready, then shut it down.","why":"The next test dies partway through for no visible reason.","command":"see docs/orchestration.md"},{"id":"T14","slug":"null-block","name":"Reserved null block","what":"vLLM reports N cache blocks but always keeps one empty. Its usage gauge counts out of N - 1.","why":"Capacity worked out from the reported block count is slightly too high.","command":"inferlint series run.series.jsonl --snapshot after.json"},{"id":"T15","slug":"client-server-mismatch","name":"Client and server counts disagree","what":"inferlint compares the load tool's own count of finished requests and generated tokens with the server's counters for the same run.","why":"If the server did more work than the load tool sent, another client was using the server and the numbers include its load. If it did less, the load tool counted work the server never did.","command":"inferlint xray -o run/ -- vllm bench serve ..."}]};
 const NS = "http://www.w3.org/2000/svg";
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -748,7 +805,7 @@ function paintOut(pre) {
   pre.innerHTML = pre.innerHTML
     .replace(/\bPASS\b/g, '<span class="s-pass">PASS</span>')
     .replace(/\bWARN\b/g, '<span class="s-warn">WARN</span>')
-    .replace(/\bFAIL\b/g, '<span class="s-fail">FAIL</span>')
+    .replace(/\bTRIPWIRE-FAILED\b/g, '<span class="s-fail">TRIPWIRE-FAILED</span>')
     .replace(/^(\s*…)$/gm, '<span class="dim">$1</span>');
 }
 
@@ -878,9 +935,7 @@ function paintOut(pre) {
     }
     towers.push(cubes);
   }
-  const [ex0, ey0] = fl[3], [ex1, ey1] = fl[2];
-  const lx = (ex0 + ex1) / 2 - 8, ly = (ey0 + ey1) / 2 + 16;
-  txt(svg, lx, ly, "GPU memory for requests: 42 blocks", { class: "lab", "text-anchor": "middle", transform: `rotate(30 ${lx.toFixed(1)} ${ly.toFixed(1)})` });
+  txt(svg, 12, 322, "GPU memory for requests: 42 blocks", { class: "lab" });
   // queue
   const b = 11, c2 = b * 0.866, s2 = b / 2, qx = 505, qy = 118, sp = 1.32, th = 4;
   txt(svg, qx, qy - 22, "the queue", { class: "lab", "text-anchor": "middle" });
@@ -910,7 +965,9 @@ function paintOut(pre) {
   function readout(i, run, wait, done, pre, avg) {
     if (i === 0) return `The recording starts just before the first request. Press <strong>Play the run</strong>, or drag the slider.`;
     if (pre === 0) return `Each request starts with <strong>4 blocks</strong>. 42 ÷ 4 = 10.5, so <strong>${run} run</strong> and <strong>${wait} wait</strong>. The benchmark asked for 32; <a href="#tw-T8">T8</a> reports the difference.`;
-    if (wait > 0) return `As answers grow past 784 tokens they need more blocks, and fewer fit. Now <strong>${run} run</strong>, holding ${avg} blocks each on average, and ${wait} wait. To make room, vLLM has pushed a running request back to the queue <strong>${pre === 1 ? "once" : pre + " times"}</strong> so far. Each one must re-read its prompt and answer so far before it can continue. vLLM writes nothing in its log about this; only a counter moves (<a href="#tw-T1">T1</a>, <a href="#tw-T9">T9</a>).`;
+    const times = `<strong>${pre === 1 ? "once" : pre + " times"}</strong>`;
+    if (wait > 0 && +avg > 4.05) return `Answers have grown past 784 tokens and need more blocks, so fewer fit: <strong>${run} run</strong>, holding ${avg} blocks each on average, and ${wait} wait. To make room, vLLM has pushed a running request back to the queue ${times} so far. Each one must re-read its prompt and answer so far before it can continue. vLLM writes nothing in its log about this; only a counter moves (<a href="#tw-T1">T1</a>, <a href="#tw-T9">T9</a>).`;
+    if (wait > 0) return `Requests that finished made room for new ones, which start at 4 blocks: <strong>${run} run</strong> and ${wait} wait. As their answers grow they will need more blocks again. Preemptions so far: ${times} (<a href="#tw-T1">T1</a>).`;
     return `The queue is empty. ${done} of 32 requests have finished and ${run} are still running. Preemptions in all: <strong>${pre}</strong> (<a href="#tw-T1">T1</a>).`;
   }
 
@@ -958,12 +1015,12 @@ function paintOut(pre) {
   let raf = 0, playing = false;
   function setPlaying(p) {
     playing = p;
-    btn.textContent = p ? "Pause" : cur >= N - 1 ? "Play again" : cur > 0 ? "Continue" : "Play the run";
+    btn.textContent = p ? "Pause" : cur >= N - 1 ? "Play again" : cur > FIRST ? "Continue" : "Play the run";
     out.setAttribute("aria-live", p ? "off" : "polite");
   }
   function play() {
     cancelAnimationFrame(raf);
-    if (cur >= N - 1) show(0, false);
+    if (cur >= N - 1) show(FIRST, false);
     const i0 = cur, t0 = performance.now();
     setPlaying(true);
     const tick = now => {
@@ -980,14 +1037,15 @@ function paintOut(pre) {
   input.addEventListener("input", () => { touched = true; pause(); show(+input.value, false); });
 
   svg.classList.add("init"); cells.classList.add("init");
-  show(0, false);
+  const FIRST = Math.max(1, S.run.findIndex(v => v > 0));
+  show(FIRST, false);
   requestAnimationFrame(() => requestAnimationFrame(() => { svg.classList.remove("init"); cells.classList.remove("init"); }));
   // play once, the first time the picture is in view
   if (!reduced && "IntersectionObserver" in window) {
     const io = new IntersectionObserver(es => {
       if (!es.some(e => e.isIntersecting)) return;
       io.disconnect();
-      if (!touched && !playing && cur === 0) play();
+      if (!touched && !playing && cur === FIRST) play();
     }, { threshold: 0.6 });
     io.observe($("#pool .stage"));
   }
@@ -1033,17 +1091,17 @@ function paintOut(pre) {
   const F = "tests/fixtures/vllm-0.28";
   const C = [
     { t: "Explain a check in plain English", bash: "inferlint explain T1", ps: "inferlint explain T1",
-      out: "T1  Silent preemption\n    When the GPU memory that holds requests in progress (the KV cache) fills up, vLLM\n    pauses a request and throws away its working notes. Before the request can continue,\n    it has to re-read everything so far to rebuild them. vLLM writes nothing in its log\n    when this happens. Only a counter moves.\n    …" },
+      out: "T1  Silent preemption  (silent-preemption)\n    When the KV cache has no free block for a running request, vLLM preempts a request:\n    it frees that request's KV blocks and later recomputes them from the prompt and the\n    output so far. vLLM increments vllm:num_preemptions_total and writes no log line at\n    the default log level (verified on vLLM 0.28, 0.29 and 0.30).\n    …" },
     { t: "List what the start-up log says", bash: "inferlint boot-facts $L/boot.log", ps: "inferlint boot-facts $L\\boot.log",
       out: "vllm_version                 0.28.0\nselected_backends            ['FLASH_ATTN']\ncandidate_backends           ('FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION')\nattention_block_size         784\nmamba_page_padding_pct       0.13\nkv_pool_tokens               26093\nmax_concurrency              1.59\nmax_concurrency_request_len  16384\navailable_kv_cache_gib       2.09\nmodel_load_gib               17.71\n…" },
     { t: "Check the start-up log", bash: "inferlint check-log $L/boot.log", ps: "inferlint check-log $L\\boot.log",
       out: "[T12] PASS  no failure in log\n[ T5] WARN  attention block size forced to 784 tokens (requested 16); each request's KV is allocated in 784-token units\n[ T6] PASS  nothing to check: the server was started without --attention-backend, so vLLM chose its own (FLASH_ATTN) and nothing could be ignored; there was no draft model either" },
     { t: "Count the hidden preemptions", bash: "inferlint preemption $L/before.snapshot.json $L/after.snapshot.json", ps: "inferlint preemption $L\\before.snapshot.json $L\\after.snapshot.json",
-      out: "[ T1] FAIL  22 preemptions during the run" },
+      out: "[ T1] TRIPWIRE-FAILED  22 preemptions during the run" },
     { t: "Measure the speed with a precise clock", bash: "inferlint rate $L/before.snapshot.json $L/after.snapshot.json", ps: "inferlint rate $L\\before.snapshot.json $L\\after.snapshot.json",
       out: "[T10] PASS  341.44 tokens/s over 93.720s; an integer-second timer would say 344.09 (+0.77%)" },
     { t: "Compare asked-for and achieved concurrency", bash: "inferlint series $L/run.series.jsonl --snapshot $L/after.snapshot.json --requested 32", ps: "inferlint series $L\\run.series.jsonl --snapshot $L\\after.snapshot.json --requested 32",
-      out: "[T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block\n[ T9] WARN  ceiling moved between 7 and 10 as requests grew (one request held 9.5% to 14.3% of the cache); concurrency was not a constant of this run\n[ T8] FAIL  requested 32 concurrent, server never ran more than 10" },
+      out: "[T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block\n[ T9] WARN  ceiling moved between 7 and 10 as requests grew (one request held 9.5% to 14.3% of the cache); concurrency was not a constant of this run\n[ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 10" },
     { t: "Compare two starts with the same settings", bash: `inferlint check-log ${F}/boot_pool_level_hi.log ${F}/boot_pool_level_lo.log`, ps: `inferlint check-log ${F.replace(/\//g, "\\")}\\boot_pool_level_hi.log ${F.replace(/\//g, "\\")}\\boot_pool_level_lo.log`,
       out: "[T12] PASS  boot_pool_level_hi.log: no failure in log\n[ T5] WARN  boot_pool_level_hi.log: attention block size forced to 416 tokens (requested 16); each request's KV is allocated in 416-token units\n[ T6] PASS  boot_pool_level_hi.log: nothing to check: …\n[T12] PASS  boot_pool_level_lo.log: no failure in log\n[ T5] WARN  boot_pool_level_lo.log: attention block size forced to 416 tokens (requested 16); …\n[ T6] PASS  boot_pool_level_lo.log: nothing to check: …\n[ T4] WARN  same flags, 2 different pools: 12,405 to 13,575 tokens (9.43% apart) across boot_pool_level_hi.log, boot_pool_level_lo.log; compare results only within one pool\n[T11] WARN  same flags, KV cache memory varied: 1.44 to 1.59 GiB" },
     { t: "Make the full report", bash: "inferlint report -o run.html --requested 32 --boot-log $L/boot.log \\\n    --before $L/before.snapshot.json --after $L/after.snapshot.json --series $L/run.series.jsonl",
@@ -1078,7 +1136,7 @@ function paintOut(pre) {
   const groups = [
     ["In the start-up log", "check-log", ["T12", "T5", "T6", "T4", "T11"]],
     ["On the first requests", "probe", ["T7"]],
-    ["During and after the run", "preemption, rate, series", ["T1", "T8", "T9", "T14", "T10"]],
+    ["During and after the run", "preemption, rate, series, xray", ["T1", "T8", "T9", "T14", "T10", "T15"]],
     ["Stopping the server", "teardown, gpu-inspect", ["T2", "T3"]],
     ["In scripts that run many tests", "a rule for your scripts", ["T13"]]
   ];
@@ -1093,7 +1151,7 @@ function paintOut(pre) {
         : `<p>${esc(t.command)}</p>`;
       const d = document.createElement("details");
       d.className = "tw"; d.id = "tw-" + id;
-      d.innerHTML = `<summary><span class="id">${id}</span><span class="nm">${esc(t.name)}</span><span class="cmd">${esc(t.command.split("  |  ")[0].replace(/^inferlint /, ""))}</span></summary>
+      d.innerHTML = `<summary><span class="id">${id}</span><span class="nm">${esc(t.name)} <small class="slug">${esc(t.slug)}</small></span><span class="cmd">${esc(t.command.split("  |  ")[0].replace(/^inferlint /, ""))}</span></summary>
         <div class="body"><p>${esc(t.what)}</p><p><strong>Why it matters.</strong> ${esc(t.why)}</p>${cmd}</div>`;
       g.appendChild(d);
     }
