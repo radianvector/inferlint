@@ -102,7 +102,7 @@ command shortened, the benchmark's own output left out):
 == what limited this run
 - The server ran fewer requests at once than the load sent. The load kept 32 requests open, but the server ran at most 10 at once. It also preempted 21 running requests.
 - Requests waited long to start. Half the requests waited more than 28.7 s for their first token, the slowest (p99) 73.2 s, most of it in the queue.
-- The run reached 26% of its pace. A running request got a token every 25.1 ms, so 32 at once could produce about 1,274 tokens/s. The run averaged 337, 26% of that: on average 8 requests ran at once, not 32.
+- On average 8 of 32 requests ran at once. The load kept 32 requests open; the server's recording shows 8.0 running on average while it was busy. The load tool measured 337 output tokens/s over the whole run.
 12 checks (8 pass, 2 warn, 2 tripwire-failed)
 report: run/report.html
 files:  run
@@ -180,7 +180,7 @@ target  pid=1030     VLLM::EngineCore
 The engine outlived its parent and kept 21.3 GiB of the card. The usual cleanup pattern
 cannot see it, and the next start would have loaded a second copy into what was left.
 The same run on vLLM 0.29 and 0.30 gave the same findings (below). The `xray` output
-above is another run on 0.28, with inferlint 0.3.0: 21 preemptions instead of 22, and a
+above is another run on 0.28, with inferlint 0.3.0 (its last finding as 0.3.1 words it): 21 preemptions instead of 22, and a
 lowest ceiling of 6 instead of 7, with the same tripwires failing and warning. The raw files are in
 [`tests/fixtures/`](https://github.com/radianvector/inferlint/tree/main/tests/fixtures),
 and `tests/test_live.py` and `tests/test_compat.py` pin every number.
@@ -387,8 +387,8 @@ for one that does not apply); `--strict` fails on warnings.
 
 `inferlint report` turns a run's files into one HTML page. It opens with what limited
 the run, in up to three sentences: whether the KV cache could hold the load, whether
-requests waited to start, and how much of the throughput its per-token speed allows the
-run reached. Then a plain-English account of what happened (how long the test ran,
+requests waited to start, and how many requests ran at once on average against how many
+the load kept open. Then a plain-English account of what happened (how long the test ran,
 requests finished and failed, tokens generated, time spent queued, which tripwires were
 checked and which need other files), the verdicts, with passed checks folded under one
 line, charts of what the server did over time and of its KV cache against the load, the

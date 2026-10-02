@@ -4,6 +4,24 @@ Each release on [PyPI](https://pypi.org/project/inferlint/) and its
 [GitHub release](https://github.com/radianvector/inferlint/releases). Dates are the PyPI
 upload dates (UTC).
 
+## 0.3.1 (unreleased)
+
+### Changed
+
+- **What limited the run: the third sentence no longer compares the run with a computed
+  throughput.** 0.3.0 divided the run's output tokens per second by
+  `concurrency x 1000 / TPOT` and called the result the share of the throughput the
+  run's per-token speed allows. That figure was not a ceiling: TPOT is measured at the
+  run's own batch size and includes time a request spent preempted, and the two numbers
+  covered different spans of the run. The sentence now gives the average number of
+  requests running, from the server's recording, against the concurrency the load kept
+  open, with the load tool's output tokens per second as measured. Without a recorded
+  running count (TensorRT-LLM updates its gauge only when a request completes), it gives
+  `tokens/s x TPOT` and names it for what it is: the requests between their first and
+  last token on average, including any paused mid-output.
+- The tutorial and the landing page list the names `--engine` and `INFERLINT_ENGINE`
+  take: `vllm`, `sglang` and `trtllm`.
+
 ## 0.3.0 (2026-10-01)
 
 ### Added

@@ -87,7 +87,7 @@ inferlint xray -o run/ --serve "sglang serve --model-path MODEL --enable-metrics
 <span class="c"># TensorRT-LLM: its metrics need return_perf_metrics: true and enable_iter_perf_stats: true in the --config file</span>
 inferlint xray -o run/ --serve "trtllm-serve serve MODEL --config llm_api.yaml"     -- python -m tensorrt_llm.serve.scripts.benchmark_serving --model MODEL --max-concurrency 32 ...
 
-<span class="c"># a team on one engine can name it once</span>
+<span class="c"># a team on one engine can name it once: vllm, sglang or trtllm</span>
 export INFERLINT_ENGINE=sglang</pre>
   <pre class="out">== engine: vLLM (from the --serve command)
 == is the GPU free?
@@ -113,11 +113,11 @@ export INFERLINT_ENGINE=sglang</pre>
 == what limited this run
 - The server ran fewer requests at once than the load sent. The load kept 32 requests open, but the server ran at most 10 at once. It also preempted 21 running requests.
 - Requests waited long to start. Half the requests waited more than 28.7 s for their first token, the slowest (p99) 73.2 s, most of it in the queue.
-- The run reached 26% of its pace. A running request got a token every 25.1 ms, so 32 at once could produce about 1,274 tokens/s. The run averaged 337, 26% of that: on average 8 requests ran at once, not 32.
+- On average 8 of 32 requests ran at once. The load kept 32 requests open; the server's recording shows 8.0 running on average while it was busy. The load tool measured 337 output tokens/s over the whole run.
 12 checks (8 pass, 2 warn, 2 tripwire-failed)
 report: run/report.html
 files:  run</pre>
-  <p class="note">The output of the vLLM command on vLLM 0.28, from another run of the test in the chart, made with inferlint 0.3.0, with paths and the load command shortened. Tested live on vLLM 0.28, 0.29 and 0.30, SGLang 0.5.20 and TensorRT-LLM 1.3.0rc29, on an RTX 4090. No GPU at hand? The <a href="tutorial.html#no-gpu">tutorial</a> runs every check on the recorded files in two minutes.</p>
+  <p class="note">The output of the vLLM command on vLLM 0.28, from another run of the test in the chart, made with inferlint 0.3.0 (its last finding as 0.3.1 words it), with paths and the load command shortened. Tested live on vLLM 0.28, 0.29 and 0.30, SGLang 0.5.20 and TensorRT-LLM 1.3.0rc29, on an RTX 4090. No GPU at hand? The <a href="tutorial.html#no-gpu">tutorial</a> runs every check on the recorded files in two minutes.</p>
 
   <nav class="cards" aria-label="Documentation">
     <a href="tutorial.html"><b>Tutorial</b><span>Try the recorded run without a GPU, then check your own. With a 3D view of the KV cache.</span></a>

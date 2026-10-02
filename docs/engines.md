@@ -114,8 +114,8 @@ and the same memory fraction, its own client ran at most 31 at once and reached 
 
 **SGLang's default memory fraction.** Started without `--mem-fraction-static`, SGLang
 0.5.20 chose 0.704 on this card (against 0.88 in the runs above) and sized a 3,411-token
-KV pool. With the same load, 3 requests fit at full length: it ran at most 5 at once,
-retracted 8, and reached 22% of the throughput its per-token speed allows. inferlint
+KV pool. With the same load, 3 requests fit at full length: it ran at most 5 at once and
+3.7 on average, retracted 8, and its client measured 203 output tokens/s. inferlint
 reported each of these (T1, T8, and what limited the run).
 
 The files are in `tests/fixtures/vllm-0.30/qwen3-8b-start1/`, `qwen3-8b-start2/`,

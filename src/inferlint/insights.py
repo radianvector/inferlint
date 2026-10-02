@@ -8,10 +8,14 @@ The tripwires say whether a run's numbers can be trusted. These say what decided
 * **waiting**: did requests wait for others to finish before they started?
 * **concurrency** (when the cache sentence does not apply, or the cache had room): did the
   server run as many requests at once as the load kept open, and if not, its own limit?
-* **pace**: while a request ran it got a token every *TPOT* ms, so *N* running at once
-  could produce ``N x 1000 / TPOT`` tokens per second. The share of that the run reached
-  is what queueing, preemption and prompt processing left; the recording says how many
-  requests ran at once on average.
+* **pace**: how many requests ran at once on average, against how many the load kept
+  open, with the output tokens per second. The average is the server's running gauge
+  from the recording, weighted by time while at least one request ran. Without it
+  (TensorRT-LLM's gauges lag) the count is ``tokens/s x TPOT``: the requests between
+  their first and last token on average. That is not the number running, since TPOT
+  includes time a request spent preempted or paused mid-output; and the client's tokens
+  per second covers its whole run, including the start and the end. No ceiling or
+  "possible" throughput is computed.
 
 Each is arithmetic on numbers the report already shows. A sentence is left out when its
 numbers are missing, and for hybrid models, whose memory per request the token count does
@@ -298,32 +302,46 @@ def _waiting(rep: Report) -> Insight | None:
 
 
 def _pace(rep: Report) -> Insight | None:
-    tpot, n = _tpot_ms(rep), _concurrency(rep)
+    n = _concurrency(rep)
+    if not n:
+        return None
     bz = busy(rep)
-    if rep.bench and rep.bench.output_throughput:
-        actual, how = rep.bench.output_throughput, "The run averaged"
-    elif bz is not None and bz.tokens_per_s:
-        actual, how = bz.tokens_per_s, "While busy, the server averaged"
-    else:
-        return None
-    if not tpot or not n:
-        return None
-    ideal = n * 1000 / tpot
-    share = actual / ideal
-    head = (
-        f"A running request got a token every {tpot:.1f} ms, so {n} at once could produce "
-        f"about {ideal:,.0f} tokens/s. {how} {actual:,.0f}, {share:.0%} of that"
+    client = rep.bench.output_throughput if rep.bench else None
+    measured = (
+        f" The load tool measured {client:,.0f} output tokens/s over the whole run."
+        if client
+        else ""
     )
-    if share >= 0.9:
-        return Insight("pace", "The run kept its requests busy", f"{head}.", "ok")
-    if bz is not None and bz.mean_running < 0.9 * n:
-        avg = round(bz.mean_running)
-        why = f": on average {_plural(avg, 'request')} ran at once, not {n}"
+    if bz is not None:
+        avg = bz.mean_running
+        title = f"On average {round(avg)} of {n} requests ran at once"
+        if client or not bz.tokens_per_s:
+            text = (
+                f"The load kept {n} requests open; the server's recording shows {avg:.1f} "
+                f"running on average while it was busy.{measured}"
+            )
+        else:
+            text = (
+                f"The load kept {n} requests open; while the server was busy, its recording "
+                f"shows {avg:.1f} running on average and {bz.tokens_per_s:,.0f} output tokens/s."
+            )
     else:
-        reasons = [r for r in (_preempted(rep),) if r]
-        why = (
-            f": the server {reasons[0]}, and the rest went to waiting and prompt processing"
-            if reasons
-            else ": the rest went to waiting, preemption and prompt processing"
+        tpot = _tpot_ms(rep)
+        if not client or not tpot:
+            return None
+        avg = min(client * tpot / 1000, n)
+        title = f"On average {round(avg)} of {n} requests were part-way through their output"
+        text = (
+            f"{measured.strip()} From its first token to its last, a request took {tpot:.1f} ms "
+            f"per token (TPOT), so on average {avg:.1f} of the {n} requests the load kept open "
+            f"were in that stretch ({client:,.0f} x {tpot / 1000:.4f} s), including any paused "
+            "mid-output."
         )
-    return Insight("pace", f"The run reached {share:.0%} of its pace", f"{head}{why}.", "limit")
+        if rep.series is not None and rep.engine.gauges_lag:
+            text += (
+                f" {rep.engine.name} updates its running gauge only when a request completes, "
+                "so the recording does not give the number running."
+            )
+    if avg >= 0.9 * n:
+        return Insight("pace", "The run kept its requests busy", text, "ok")
+    return Insight("pace", title, text, "limit")

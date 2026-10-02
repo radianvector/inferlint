@@ -61,13 +61,22 @@ def test_a_cache_that_holds_the_load() -> None:
 
 
 def test_the_pace_says_how_many_ran_on_average() -> None:
+    """The recording's average running count, and the load tool's tokens/s; no ceiling."""
     pace = said("sglang-0.5/qwen3-8b")["pace"]
-    assert pace.title == "The run reached 53% of its pace"
-    assert "every 21.1 ms, so 32 at once could produce about 1,515 tokens/s" in pace.text
-    assert pace.text.endswith("on average 17 requests ran at once, not 32.")
-    # TensorRT-LLM's gauges lag, so no average from its recording: the pauses are the reason
+    assert pace.title == "On average 17 of 32 requests ran at once"
+    assert pace.text == (
+        "The load kept 32 requests open; the server's recording shows 16.8 running on average "
+        "while it was busy. The load tool measured 799 output tokens/s over the whole run."
+    )
+    assert "%" not in pace.title + pace.text and "possible" not in pace.text
+    # TensorRT-LLM's gauges lag: counted from tokens instead, and called what it is
     trt = said("trtllm-1.3/pauses")["pace"]
-    assert "76% of that: the server paused 13 running requests" in trt.text
+    assert trt.title == "On average 24 of 32 requests were part-way through their output"
+    assert "so on average 24.4 of the 32 requests the load kept open were in that stretch" in (
+        trt.text
+    )
+    assert "(1,006 x 0.0243 s), including any paused mid-output." in trt.text
+    assert trt.text.endswith("so the recording does not give the number running.")
 
 
 def test_waiting_long_is_told_from_waiting_for_others() -> None:
@@ -85,7 +94,7 @@ def test_hybrid_models_get_the_concurrency_sentence_instead() -> None:
     assert "ran at most 1 at once: SGLang lowered its limit to 1 running because of the mamba" in (
         capped["concurrency"].text
     )
-    assert capped["pace"].text.endswith("on average 1 request ran at once, not 32.")
+    assert "the server's recording shows 1.0 running on average" in capped["pace"].text
     vllm = said("vllm-0.30/live")
     assert "cache" not in vllm
     assert vllm["concurrency"].text.endswith(
@@ -97,7 +106,10 @@ def test_without_the_load_tools_result() -> None:
     """The server's own counts: queue time, and the pace while it was busy."""
     got = said("vllm-0.28/live", bench=False)
     assert got["waiting"].text == "A request waited 29.3 s on average before the server started it."
-    assert "While busy, the server averaged 343" in got["pace"].text
+    assert got["pace"].text.endswith(
+        "while the server was busy, its recording shows 8.0 running on average and 343 "
+        "output tokens/s."
+    )
 
 
 def test_at_most_three_and_nothing_after_a_restart() -> None:
