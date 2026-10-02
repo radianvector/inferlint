@@ -97,8 +97,8 @@ _MEANING = {
     ),
     Status.UNKNOWN: (
         "The check could not decide, because a counter or log line it needs was missing, "
-        "for example from a vLLM version it does not know. It never counts as a pass.",
-        "Supply the missing file, or check the vLLM version.",
+        "for example from an engine version it does not know. It never counts as a pass.",
+        "Supply the missing file, or check the engine's version.",
     ),
     Status.PASS: (
         "The tripwire looked for its problem in this run and did not find it.",

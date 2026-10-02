@@ -79,6 +79,7 @@ Output from the vLLM 0.28 run described below, on an RTX 4090 (paths and the loa
 command shortened, the benchmark's own output left out):
 
 ```console
+== engine: vLLM (from the --serve command)
 == is the GPU free?
 [ T2] PASS  2 consecutive clear readings
 == start the server (output in run/boot.log)
@@ -91,17 +92,17 @@ command shortened, the benchmark's own output left out):
 == load: vllm bench serve --model MODEL ... --max-concurrency 32 --save-result --result-dir run --result-filename bench.json
 == checks
 [ T1] TRIPWIRE-FAILED  21 preemptions during the run
-[T10] PASS  314.99 tokens/s over 101.590s; an integer-second timer would say 313.73 (-0.40%)
+[T10] PASS  316.82 tokens/s over 101.005s; an integer-second timer would say 316.83 (+0.01%)
 [T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block
-[ T9] WARN  ceiling moved between 5 and 10 as requests grew (one request held 9.5% to 19.0% of the cache); concurrency was not a constant of this run
+[ T9] WARN  ceiling moved between 6 and 10 as requests grew (one request held 9.5% to 16.3% of the cache); concurrency was not a constant of this run
 [ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 10
 [T15] PASS  client and server agree: 32 requests, 32,000 output tokens
 == stop the server
 [ T2] PASS  2 consecutive clear readings
 == what limited this run
 - The server ran fewer requests at once than the load sent. The load kept 32 requests open, but the server ran at most 10 at once. It also preempted 21 running requests.
-- Requests waited long to start. Half the requests waited more than 28.9 s for their first token, the slowest (p99) 73.4 s, most of it in the queue.
-- The run reached 26% of its pace. A running request got a token every 25.1 ms, so 32 at once could produce about 1,273 tokens/s. The run averaged 336, 26% of that: on average 8 requests ran at once, not 32.
+- Requests waited long to start. Half the requests waited more than 28.7 s for their first token, the slowest (p99) 73.2 s, most of it in the queue.
+- The run reached 26% of its pace. A running request got a token every 25.1 ms, so 32 at once could produce about 1,274 tokens/s. The run averaged 337, 26% of that: on average 8 requests ran at once, not 32.
 12 checks (8 pass, 2 warn, 2 tripwire-failed)
 report: run/report.html
 files:  run
@@ -179,8 +180,8 @@ target  pid=1030     VLLM::EngineCore
 The engine outlived its parent and kept 21.3 GiB of the card. The usual cleanup pattern
 cannot see it, and the next start would have loaded a second copy into what was left.
 The same run on vLLM 0.29 and 0.30 gave the same findings (below). The `xray` output
-above is a second run on 0.28: 21 preemptions instead of 22, and a lowest ceiling of 5
-instead of 7, with the same tripwires failing and warning. The raw files are in
+above is another run on 0.28, with inferlint 0.3.0: 21 preemptions instead of 22, and a
+lowest ceiling of 6 instead of 7, with the same tripwires failing and warning. The raw files are in
 [`tests/fixtures/`](https://github.com/radianvector/inferlint/tree/main/tests/fixtures),
 and `tests/test_live.py` and `tests/test_compat.py` pin every number.
 

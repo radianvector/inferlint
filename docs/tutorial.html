@@ -382,7 +382,7 @@ footer{margin-top:72px;padding-top:18px;border-top:1px solid var(--hair);font-si
         <p class="eyebrow">Quick start · 2 minutes · no GPU</p>
         <h2>Try it on the recorded run</h2>
         <div class="prose">
-          <p>The repository includes the files from the recorded run, so you can run every check on any computer, Linux, macOS or Windows, without a GPU or a server.</p>
+          <p>The repository includes the files from the recorded run, and from recorded SGLang and TensorRT-LLM runs, so you can run every check on any computer, Linux, macOS or Windows, without a GPU or a server.</p>
         </div>
 
         <div class="bstep" id="b1">
@@ -408,7 +408,7 @@ cd inferlint</code></pre></div>
           <div class="code" data-os="bash"><pre><code>L=tests/fixtures/vllm-0.28/live</code></pre></div>
           <div class="code" data-os="ps" hidden><pre><code>$L = "tests\fixtures\vllm-0.28\live"</code></pre></div>
           <div class="cmds" id="b-cmds"></div>
-          <p class="note"><strong>On Windows,</strong> everything here works in PowerShell. <code>teardown</code> needs Linux, because it finds the server's processes the way Linux lists them. <code>gpu-inspect</code> shows the GPU on Windows too, but its free-card check (T2) needs Linux, so there it answers Can't tell. Run those two in WSL, where vLLM runs anyway.</p>
+          <p class="note"><strong>On Windows,</strong> everything here works in PowerShell. <code>teardown</code> needs Linux, because it finds the server's processes the way Linux lists them. <code>gpu-inspect</code> shows the GPU on Windows too, but its free-card check (T2) needs Linux, so there it answers Can't tell. Run those two in WSL, where the engines run anyway.</p>
         </div>
       </section>
 
@@ -469,7 +469,8 @@ cd inferlint</code></pre></div>
        --random-input-len 88 --random-output-len 1000 --ignore-eos \
        --num-prompts 32 --max-concurrency 32</code></pre></div>
         <p class="see">You'll see (vLLM 0.28 on the RTX 4090 used for this page, shortened)</p>
-        <pre class="out">== is the GPU free?
+        <pre class="out">== engine: vLLM (from the --serve command)
+== is the GPU free?
 [ T2] PASS  2 consecutive clear readings
 == start the server (output in run/boot.log)
 == boot log
@@ -482,18 +483,22 @@ cd inferlint</code></pre></div>
 …
 == checks
 [ T1] TRIPWIRE-FAILED  21 preemptions during the run
-[T10] PASS  314.99 tokens/s over 101.590s; an integer-second timer would say 313.73 (-0.40%)
+[T10] PASS  316.82 tokens/s over 101.005s; an integer-second timer would say 316.83 (+0.01%)
 [T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block
-[ T9] WARN  ceiling moved between 5 and 10 as requests grew (one request held 9.5% to 19.0% of the cache); concurrency was not a constant of this run
+[ T9] WARN  ceiling moved between 6 and 10 as requests grew (one request held 9.5% to 16.3% of the cache); concurrency was not a constant of this run
 [ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 10
 [T15] PASS  client and server agree: 32 requests, 32,000 output tokens
 == stop the server
 [ T2] PASS  2 consecutive clear readings
+== what limited this run
+- The server ran fewer requests at once than the load sent. The load kept 32 requests open, but the server ran at most 10 at once. It also preempted 21 running requests.
+- Requests waited long to start. Half the requests waited more than 28.7 s for their first token, the slowest (p99) 73.2 s, most of it in the queue.
+- The run reached 26% of its pace. A running request got a token every 25.1 ms, so 32 at once could produce about 1,274 tokens/s. The run averaged 337, 26% of that: on average 8 requests ran at once, not 32.
 12 checks (8 pass, 2 warn, 2 tripwire-failed)
 report: run/report.html
 files:  run</pre>
         <div class="prose">
-          <p>Above, paths are shortened, the load command is cut, and the benchmark's own output is left out (the <code>…</code> line). This was a second run of the same test as the recorded one, so its counts differ a little: 21 preemptions instead of 22, and a lowest ceiling of 5 instead of 7.</p>
+          <p>Above, paths are shortened, the load command is cut, and the benchmark's own output is left out (the <code>…</code> line). This was another run of the same test as the recorded one, made with inferlint 0.3.0, so its counts differ a little: 21 preemptions instead of 22, and a lowest ceiling of 6 instead of 7.</p>
           <p>Every file lands in <code>run/</code>: the boot log, the before and after readings, the recording, the benchmark's own result file and <code>report.html</code>. The server is stopped at the end even if a step fails or you press Ctrl-C. To check a server that is already running, leave out <code>--serve</code> and give <code>--url</code> and <code>--boot-log</code>.</p>
           <p>For each engine's own benchmark client (<code>vllm bench serve</code>, SGLang's <code>python -m sglang.benchmark.serving</code>, TensorRT-LLM's <code>python -m tensorrt_llm.serve.scripts.benchmark_serving</code>), xray asks the client to save its result so it can compare the benchmark's own counts with the server's (<a href="#tw-T15">T15</a>), and reads <code>--max-concurrency</code> as the concurrency asked for (<a href="#tw-T8">T8</a>). Any other load tool runs as it is.</p>
         </div>
@@ -563,6 +568,7 @@ trtllm-serve serve "$MODEL" --config llm_api.yaml 2&gt;&amp;1 | tee boot.log</co
             <div class="body">
               <p>Some settings start cleanly and then crash on the first request. The probe sends one request, then 8 at once, and checks that the server is still running afterwards.</p>
               <div class="code"><pre><code>inferlint probe http://127.0.0.1:8000</code></pre></div>
+              <p class="hint">Use the server's address. vLLM and TensorRT-LLM listen on port 8000 by default, SGLang on 30000.</p>
               <p class="see">You'll see</p>
               <pre class="out">[ T7] PASS  1 + 8 concurrent requests served, server alive</pre>
               <div class="chips">Checks <a class="chip" href="#tw-T7">T7</a></div>
@@ -590,11 +596,20 @@ trtllm-serve serve "$MODEL" --config llm_api.yaml 2&gt;&amp;1 | tee boot.log</co
           <li class="step" id="s7"><details>
             <summary><span class="n">7</span><span class="st">Run your load test</span><span class="peek">your usual client</span></summary>
             <div class="body">
-              <p>Use whatever benchmark you normally use. inferlint doesn't need to know which: its numbers come from the server's own counters. Note how many requests your tool keeps open at once; you'll pass that number as <code>--requested</code>. For example, with vLLM's own client:</p>
-              <div class="code"><pre><code>vllm bench serve --model "$MODEL" --dataset-name random \
+              <p>Use whatever benchmark you normally use. inferlint doesn't need to know which: its numbers come from the server's own counters. Note how many requests your tool keeps open at once; you'll pass that number as <code>--requested</code>. For example, with each engine's own client:</p>
+              <div class="code"><pre><code><span class="c"># vLLM</span>
+vllm bench serve --model "$MODEL" --dataset-name random \
     --random-input-len 88 --random-output-len 1000 --ignore-eos \
-    --num-prompts 32 --max-concurrency 32</code></pre></div>
-              <p class="hint">Option names change between vLLM versions; <code>vllm bench serve --help</code> lists yours.</p>
+    --num-prompts 32 --max-concurrency 32
+<span class="c"># SGLang</span>
+python -m sglang.benchmark.serving --model "$MODEL" --dataset-name random-ids \
+    --random-input-len 88 --random-output-len 1000 --random-range-ratio 1 \
+    --num-prompts 32 --max-concurrency 32
+<span class="c"># TensorRT-LLM</span>
+python -m tensorrt_llm.serve.scripts.benchmark_serving --model "$MODEL" \
+    --dataset-name random --random-ids --random-input-len 88 --random-output-len 1000 \
+    --ignore-eos --num-prompts 32 --max-concurrency 32</code></pre></div>
+              <p class="hint">Option names change between releases; each client's <code>--help</code> lists yours.</p>
             </div>
           </details></li>
 
@@ -621,6 +636,7 @@ inferlint series run.series.jsonl --snapshot after.json --requested 32</code></p
 [ T9] WARN  ceiling moved between 7 and 10 as requests grew (one request held 9.5% to 14.3% of the cache); concurrency was not a constant of this run
 [ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 10</pre>
               <p>The server finished all 32 requests without errors. The two failed tripwires are about the measurement: at most 10 requests ran at once, and 22 were paused and restarted along the way.</p>
+              <p class="hint">TensorRT-LLM counts no pauses; it logs each one. On TensorRT-LLM, add <code>--boot-log boot.log</code> to <code>preemption</code>, so it counts them from the log, which <code>tee</code> keeps writing through the run.</p>
               <div class="chips">Checks <a class="chip" href="#tw-T1">T1</a><a class="chip" href="#tw-T10">T10</a><a class="chip" href="#tw-T14">T14</a><a class="chip" href="#tw-T9">T9</a><a class="chip" href="#tw-T8">T8</a></div>
             </div>
           </details></li>
@@ -628,12 +644,18 @@ inferlint series run.series.jsonl --snapshot after.json --requested 32</code></p
           <li class="step" id="s10"><details>
             <summary><span class="n">10</span><span class="st">Make the report</span><span class="peek">inferlint report -o run.html …</span></summary>
             <div class="body">
-              <p>One HTML page with everything: a plain-English account of the run, every verdict, charts of what the server did, and the start-up facts. It needs no internet connection, so you can attach it to a ticket as it is.</p>
+              <p>One HTML page with everything. It opens with what limited the run, in up to three sentences, then gives a plain-English account of the run, every verdict, charts of what the server did, and the start-up facts. It needs no internet connection, so you can attach it to a ticket as it is.</p>
               <div class="code"><pre><code>inferlint report -o run.html --requested 32 --boot-log boot.log \
     --before before.json --after after.json --series run.series.jsonl</code></pre></div>
               <p class="see">You'll see</p>
-              <pre class="out">8 checks (4 pass, 2 warn, 2 fail) -&gt; run.html</pre>
-              <p>Open <code>run.html</code> in any browser. <a href="example-report.html">The report for the recorded run</a> shows what you get.</p>
+              <pre class="out">[ T1] TRIPWIRE-FAILED  22 preemptions during the run
+…
+What limited this run:
+  - The server ran fewer requests at once than the load sent. The load kept 32 requests open, but the server ran at most 10 at once. It also preempted 22 running requests.
+  - Requests waited in the queue. A request waited 29.3 s on average before the server started it.
+  - The run reached 27% of its pace. …
+8 checks (4 pass, 2 warn, 2 tripwire-failed) -&gt; run.html</pre>
+              <p>Open <code>run.html</code> in any browser. <a href="example-report.html">The report for the recorded run</a> shows what you get. For a folder that <code>xray</code> wrote, <code>inferlint report run/</code> is enough: it finds the files by name.</p>
             </div>
           </details></li>
 
@@ -709,7 +731,7 @@ inferlint xray -o run/ --serve "trtllm-serve serve $MODEL --config llm_api.yaml"
               <tbody>
                 <tr><td><span class="pill fail"><svg viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>Tripwire failed</span></td><td>The tripwire caught its problem in this run. For T7 and T12 the server itself failed. For every other tripwire the server worked, but a number from the run (concurrency, speed or delay) does not mean what it seems.</td><td>Fix the setup and run again, or report the number together with the finding.</td></tr>
                 <tr><td><span class="pill warn"><svg viewBox="0 0 16 16"><path d="M8 3.5v6M8 12.2v.3"/></svg>Warning</span></td><td>Nothing is wrong on its own, but a setting or an effect changes how the numbers should be read.</td><td>Keep the warning with the results.</td></tr>
-                <tr><td><span class="pill unknown"><svg viewBox="0 0 16 16"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6 1v.6M8 12.2v.3"/></svg>Can't tell</span></td><td>A counter or log line the check needs was missing. It never counts as a pass. The terminal shows it as <code>????</code>.</td><td>Supply the missing file, or check the vLLM version.</td></tr>
+                <tr><td><span class="pill unknown"><svg viewBox="0 0 16 16"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6 1v.6M8 12.2v.3"/></svg>Can't tell</span></td><td>A counter or log line the check needs was missing. It never counts as a pass. The terminal shows it as <code>????</code>.</td><td>Supply the missing file, or check the engine's version.</td></tr>
                 <tr><td><span class="pill pass"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg>Pass</span></td><td>The check looked for its problem in this run and did not find it.</td><td>Nothing. A pass covers this run only.</td></tr>
                 <tr><td><span class="pill not_applicable"><svg viewBox="0 0 16 16"><path d="M4.5 8h7"/></svg>Does not apply</span></td><td>The tripwire is about a behaviour this engine does not have, such as vLLM's reserved KV block (<a href="#tw-T14">T14</a>) on SGLang or TensorRT-LLM. The terminal shows it as <code>N/A</code>.</td><td>Nothing.</td></tr>
               </tbody>
@@ -722,10 +744,10 @@ inferlint xray -o run/ --serve "trtllm-serve serve $MODEL --config llm_api.yaml"
               <tbody>
                 <tr><td class="n"><code>0</code></td><td>everything passed (warnings allowed)</td></tr>
                 <tr><td class="n"><code>1</code></td><td>a tripwire failed</td></tr>
-                <tr><td class="n"><code>2</code></td><td>a tripwire could not decide</td></tr>
+                <tr><td class="n"><code>2</code></td><td>a tripwire could not decide, or an input came from another engine than the one named</td></tr>
               </tbody>
             </table></div>
-            <p><code>--strict</code> turns warnings into failures. <code>--json</code> prints the results as JSON, including the evidence behind each one.</p>
+            <p>A tripwire that does not apply to the engine (<code>N/A</code>) does not change the exit code. <code>--strict</code> turns warnings into failures. <code>--json</code> prints the results as JSON, including the evidence behind each one.</p>
           </div>
         </div>
       </section>
@@ -759,6 +781,7 @@ inferlint xray -o run/ --serve "trtllm-serve serve $MODEL --config llm_api.yaml"
               <tr><td>After the test</td><td><code>inferlint rate before.json after.json</code></td><td>T10</td></tr>
               <tr><td>After the test</td><td><code>inferlint series run.series.jsonl --snapshot after.json --requested N</code></td><td>T8 T9 T14</td></tr>
               <tr><td>Any time after</td><td><code>inferlint report -o run.html …</code></td><td>all that apply</td></tr>
+              <tr><td>Any time after, for a folder from xray</td><td><code>inferlint report run/</code></td><td>all that apply</td></tr>
               <tr><td>Stopping the server</td><td><code>inferlint teardown</code></td><td>T2 T3</td></tr>
               <tr><td>Any time</td><td><code>inferlint explain T1</code></td><td>explains a check</td></tr>
               <tr><td>Once, for a team on one engine</td><td><code>export INFERLINT_ENGINE=sglang</code></td><td>refuses another engine's files</td></tr>
@@ -1138,7 +1161,7 @@ function paintOut(pre) {
     { t: "Explain a check in plain English", bash: "inferlint explain T1", ps: "inferlint explain T1",
       out: "T1  Silent preemption  (silent-preemption)\n    When the KV cache has no free block for a running request, vLLM preempts a request:\n    it frees that request's KV blocks and later recomputes them from the prompt and the\n    output so far. vLLM increments vllm:num_preemptions_total and writes no log line at\n    the default log level (verified on vLLM 0.28, 0.29 and 0.30).\n    …" },
     { t: "List what the start-up log says", bash: "inferlint boot-facts $L/boot.log", ps: "inferlint boot-facts $L\\boot.log",
-      out: "vllm_version                 0.28.0\nselected_backends            ['FLASH_ATTN']\ncandidate_backends           ('FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION')\nattention_block_size         784\nmamba_page_padding_pct       0.13\nkv_pool_tokens               26093\nmax_concurrency              1.59\nmax_concurrency_request_len  16384\navailable_kv_cache_gib       2.09\nmodel_load_gib               17.71\n…" },
+      out: "engine                       vllm\nvllm_version                 0.28.0\nselected_backends            ['FLASH_ATTN']\ncandidate_backends           ('FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION')\nattention_block_size         784\nmamba_page_padding_pct       0.13\nkv_pool_tokens               26093\nmax_concurrency              1.59\nmax_concurrency_request_len  16384\navailable_kv_cache_gib       2.09\nmodel_load_gib               17.71\n…" },
     { t: "Check the start-up log", bash: "inferlint check-log $L/boot.log", ps: "inferlint check-log $L\\boot.log",
       out: "[T12] PASS  no failure in log\n[ T5] WARN  attention block size forced to 784 tokens (requested 16); each request's KV is allocated in 784-token units\n[ T6] PASS  nothing to check: the server was started without --attention-backend, so vLLM chose its own (FLASH_ATTN) and nothing could be ignored; there was no draft model either" },
     { t: "Count the hidden preemptions", bash: "inferlint preemption $L/before.snapshot.json $L/after.snapshot.json", ps: "inferlint preemption $L\\before.snapshot.json $L\\after.snapshot.json",
@@ -1148,10 +1171,13 @@ function paintOut(pre) {
     { t: "Compare asked-for and achieved concurrency", bash: "inferlint series $L/run.series.jsonl --snapshot $L/after.snapshot.json --requested 32", ps: "inferlint series $L\\run.series.jsonl --snapshot $L\\after.snapshot.json --requested 32",
       out: "[T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block\n[ T9] WARN  ceiling moved between 7 and 10 as requests grew (one request held 9.5% to 14.3% of the cache); concurrency was not a constant of this run\n[ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 10" },
     { t: "Compare two starts with the same settings", bash: `inferlint check-log ${F}/boot_pool_level_hi.log ${F}/boot_pool_level_lo.log`, ps: `inferlint check-log ${F.replace(/\//g, "\\")}\\boot_pool_level_hi.log ${F.replace(/\//g, "\\")}\\boot_pool_level_lo.log`,
-      out: "[T12] PASS  boot_pool_level_hi.log: no failure in log\n[ T5] WARN  boot_pool_level_hi.log: attention block size forced to 416 tokens (requested 16); each request's KV is allocated in 416-token units\n[ T6] PASS  boot_pool_level_hi.log: nothing to check: …\n[T12] PASS  boot_pool_level_lo.log: no failure in log\n[ T5] WARN  boot_pool_level_lo.log: attention block size forced to 416 tokens (requested 16); …\n[ T6] PASS  boot_pool_level_lo.log: nothing to check: …\n[ T4] WARN  same flags, 2 different pools: 12,405 to 13,575 tokens (9.43% apart) across boot_pool_level_hi.log, boot_pool_level_lo.log; compare results only within one pool\n[T11] WARN  same flags, KV cache memory varied: 1.44 to 1.59 GiB" },
-    { t: "Make the full report", bash: "inferlint report -o run.html --requested 32 --boot-log $L/boot.log \\\n    --before $L/before.snapshot.json --after $L/after.snapshot.json --series $L/run.series.jsonl",
-      ps: "inferlint report -o run.html --requested 32 --boot-log $L\\boot.log --before $L\\before.snapshot.json --after $L\\after.snapshot.json --series $L\\run.series.jsonl",
-      out: "8 checks (4 pass, 2 warn, 2 fail) -> run.html", after: "Then open <code>run.html</code> in any browser. It works offline." }
+      out: "[T12] PASS  boot_pool_level_hi.log: no failure in log\n[ T5] WARN  boot_pool_level_hi.log: attention block size forced to 416 tokens (requested 16); each request's KV is allocated in 416-token units\n[ T6] PASS  boot_pool_level_hi.log: nothing to check: …\n[T12] PASS  boot_pool_level_lo.log: no failure in log\n[ T5] WARN  boot_pool_level_lo.log: attention block size forced to 416 tokens (requested 16); …\n[ T6] PASS  boot_pool_level_lo.log: nothing to check: …\n[ T4] WARN  same flags, 2 different pools: 12,405 to 13,575 tokens (9.43% apart) across boot_pool_level_hi.log, boot_pool_level_lo.log; compare results only within one pool\n[T11] WARN  same flags, KV cache memory varied: 1.44 to 1.59 GiB (weights and non-torch memory 18.85 to 18.99 GiB; 1 of 2 starts compiled the model from scratch)" },
+    { t: "Make the full report", bash: "inferlint report $L --requested 32 -o run.html", ps: "inferlint report $L --requested 32 -o run.html",
+      out: "[T12] PASS  no failure in log\n[ T5] WARN  attention block size forced to 784 tokens (requested 16); each request's KV is allocated in 784-token units\n[ T6] PASS  nothing to check: …\n[ T1] TRIPWIRE-FAILED  22 preemptions during the run\n[T10] PASS  341.44 tokens/s over 93.720s\n[T14] PASS  gauge denominator is 42 = num_gpu_blocks (43) - 1 null block\n[ T9] WARN  ceiling moved between 7 and 10 as requests grew (one request held 9.5% to 14.3% of the cache); concurrency was not a constant of this run\n[ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 10\nWhat limited this run:\n  - The server ran fewer requests at once than the load sent. The load kept 32 requests open, but the server ran at most 10 at once. It also preempted 22 running requests.\n  - Requests waited in the queue. A request waited 29.3 s on average before the server started it.\n  - The run reached 27% of its pace. A running request got a token every 24.8 ms, so 32 at once could produce about 1,291 tokens/s. While busy, the server averaged 343, 27% of that: on average 8 requests ran at once, not 32.\n8 checks (4 pass, 2 warn, 2 tripwire-failed) -> run.html", after: "It finds the files in the folder by name. Then open <code>run.html</code> in any browser; it works offline." },
+    { t: "Read an SGLang run and a TensorRT-LLM run", bash: "inferlint report tests/fixtures/sglang-0.5/qwen3-8b -o sglang.html\ninferlint report tests/fixtures/trtllm-1.3/qwen3-8b -o trtllm.html", ps: "inferlint report tests\\fixtures\\sglang-0.5\\qwen3-8b -o sglang.html\ninferlint report tests\\fixtures\\trtllm-1.3\\qwen3-8b -o trtllm.html",
+      out: "[T12] PASS  no failure in log\n[ T5] PASS  page size 1 token, as set\n…\n[ T1] PASS  no retractions\n[T10] PASS  642.10 tokens/s over 49.836s\n[T14] N/A  does not apply to SGLang: T14 is about vLLM's reserved null block\n[ T9] WARN  ceiling moved between 30 and 31 as requests grew …\n[ T8] TRIPWIRE-FAILED  requested 32 concurrent, server never ran more than 29\nWhat limited this run:\n  - The KV cache was too small for the load. The cache holds 32,096 tokens; 32 requests of 1,088 tokens need 34,816 to run to the end together, so 29 fit at full length. To make room, it ran at most 29 at once and queued the rest.\n  …\n8 checks (6 pass, 1 warn, 1 tripwire-failed); 1 does not apply -> sglang.html\n…\n8 checks (8 pass); 1 does not apply -> trtllm.html", after: "The same model and load on each engine. inferlint tells the engine from the files. <a href=\"#tw-T14\">T14</a> is about a behaviour of vLLM's, so on these two it says it does not apply (<code>N/A</code>)." },
+    { t: "Name your engine once", bash: "export INFERLINT_ENGINE=sglang\ninferlint preemption $L/before.snapshot.json $L/after.snapshot.json", ps: "$env:INFERLINT_ENGINE = \"sglang\"\ninferlint preemption $L\\before.snapshot.json $L\\after.snapshot.json",
+      out: "inferlint: INFERLINT_ENGINE=sglang, but the snapshots came from vLLM. Check the server address or the file, or name the engine it came from.", after: "A team that always runs one engine sets this once (or passes <code>--engine sglang</code>). A file from another engine, here the recorded vLLM run, is then refused with exit status 2. Undo it with <code>unset INFERLINT_ENGINE</code> (PowerShell: <code>Remove-Item Env:INFERLINT_ENGINE</code>)." }
   ];
   const host = $("#b-cmds");
   C.forEach((c, i) => {
